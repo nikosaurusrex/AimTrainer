@@ -6,7 +6,7 @@ layout (location = 2) in vec3 in_normal;
 
 out vec4 out_frag_pos;
 out vec3 out_normal;
-
+    
 uniform mat4 proj_mat;
 uniform mat4 view_mat;
 uniform mat4 model_mat;

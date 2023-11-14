@@ -18,6 +18,7 @@ struct SimpleMesh {
 
 SimpleMesh *CreateSimpleMesh(f32 *vertices, s32 num_vertices);
 void DestroySimpleMesh(SimpleMesh *mesh);
+void Bind(SimpleMesh *mesh);
 void Draw(SimpleMesh *mesh);
 
 struct Mesh {

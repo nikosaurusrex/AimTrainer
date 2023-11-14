@@ -30,6 +30,12 @@ struct AimTrainer {
     f64 m_pitch;
 };
 
+struct Crosshair {
+    f32 size;
+    f32 thickness;
+    f32 gap;
+};
+
 const f32 SKYBOX_SIZE = 200.0f;
 f32 skybox_vertices [] = {
 	-SKYBOX_SIZE, -SKYBOX_SIZE, -SKYBOX_SIZE,
@@ -68,6 +74,15 @@ f32 skybox_vertices [] = {
 	SKYBOX_SIZE,  SKYBOX_SIZE,  SKYBOX_SIZE,
 	-SKYBOX_SIZE,  SKYBOX_SIZE,  SKYBOX_SIZE,
 	-SKYBOX_SIZE,  SKYBOX_SIZE, -SKYBOX_SIZE,
+};
+
+f32 retangle_vertices[] = {
+	-1, -1, 0,
+    1, -1, 0,
+    1, 1, 0,
+    1, 1, 0,
+    -1, 1, 0,
+    -1, -1, 0
 };
 
 void LogInfo(const char *format, ...) {
@@ -186,18 +201,17 @@ void InitGLFW() {
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+    glfwWindowHint(GLFW_SAMPLES, 4);
 }
 
 Window CreateWindow(const char *title, int width, int height) {
     Window window = {};
 
-	window.handle = glfwCreateWindow(width, height, title, 0, 0);
+	window.handle = glfwCreateWindow(width, height, title, glfwGetPrimaryMonitor(), 0);
     if (!window.handle) {
         LogFatal("Failed to create GLFW window!");
     }
 
-    const GLFWvidmode *vid_mode = glfwGetVideoMode(glfwGetPrimaryMonitor());
-    glfwSetWindowPos(window.handle, vid_mode->width / 2 - width / 2, vid_mode->height / 2 - height / 2);
     glfwMakeContextCurrent(window.handle);
 
 	glfwSwapInterval(1);
@@ -247,17 +261,52 @@ void Render() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
-glm::mat4 TempModel(glm::vec3 trans, glm::vec3 rot, glm::vec3 scale) {
+glm::mat4 TranslateScale(glm::vec3 trans, glm::vec3 scale) {
+    return glm::translate(glm::mat4(1.0f), trans) * 
+                glm::scale(glm::mat4(1.0f), scale);
+}
+
+glm::mat4 TranslateRotateScale(glm::vec3 trans, glm::vec3 rot, glm::vec3 scale) {
     return glm::translate(glm::mat4(1.0f), trans) * 
                 glm::toMat4(glm::quat(glm::radians(rot))) *
                 glm::scale(glm::mat4(1.0f), scale);
+}
+
+void DrawCrosshair(Crosshair crosshair, Shader *ui_shader, Window window, SimpleMesh *crosshair_mesh) {
+    glm::mat4 ui_proj = glm::ortho(0.0f, (f32) window.width, (f32) window.height, 0.0f, -1.0f, 1.0f);
+    glm::mat4 center_mat = glm::translate(glm::mat4(1.0f), glm::vec3(window.width / 2, window.height / 2, 0.0f));
+
+    Use(ui_shader);
+    LoadMatrix(ui_shader, "proj_mat", ui_proj);
+    LoadMatrix(ui_shader, "view_mat", center_mat);
+    Bind(crosshair_mesh);
+
+    f32 size = crosshair.size;
+    f32 thickness = crosshair.thickness;
+    f32 gap = crosshair.gap;
+
+    // right
+    LoadMatrix(ui_shader, "model_mat", TranslateRotateScale({gap, 0, 0}, {0, 0, 0}, {size, thickness, 1}));
+    Draw(crosshair_mesh);
+    
+    // left
+    LoadMatrix(ui_shader, "model_mat", TranslateRotateScale({-gap, 0, 0}, {180, 0, 0}, {size, thickness, 1}));
+    Draw(crosshair_mesh);
+
+    // bottom
+    LoadMatrix(ui_shader, "model_mat", TranslateRotateScale({0, gap, 0}, {0, 0, 0}, {thickness, size, 1}));
+    Draw(crosshair_mesh);
+
+    // top
+    LoadMatrix(ui_shader, "model_mat", TranslateRotateScale({0, -gap, 0}, {0, 180, 0}, {thickness, size, 1}));
+    Draw(crosshair_mesh);
 }
 
 int main() {  
 	AimTrainer trainer = {};
 
     InitGLFW();
-    Window window = CreateWindow("AimTrainer", 1280, 720);
+    Window window = CreateWindow("AimTrainer", 1920, 1080);
 
     InitWindow(&window, &trainer);
 
@@ -279,6 +328,9 @@ int main() {
     Shader *shader = CreateShader("assets/shaders/simple.vert", "assets/shaders/simple.frag");
     Camera *camera = CreateCamera(103, 1.0f, 0.1f, 1000.0f);
     
+    Shader *ui_shader = CreateShader("assets/shaders/ui.vert", "assets/shaders/ui.frag");
+    SimpleMesh *crosshair_mesh = CreateSimpleMesh(retangle_vertices, 18);
+
     trainer.window = window;
     trainer.camera = camera;
     trainer.sensitivity = 2.068;
@@ -287,12 +339,14 @@ int main() {
 
     glfwGetCursorPos(window.handle, &trainer.last_mouse_x, &trainer.last_mouse_y);
 
-    Mesh *mesh = LoadObjFile("assets/models/cube.obj");
+    Mesh *cube_mesh = LoadObjFile("assets/models/cube.obj");
+    Mesh *sphere_mesh = LoadObjFile("assets/models/sphere.obj");
 
     CalculateCamera(camera, window.width, window.height);
 
     glDisable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
+    glEnable(GL_MULTISAMPLE);  
 
     while (WindowShouldClose(&window)) {
         Render();
@@ -306,6 +360,7 @@ int main() {
 
         glActiveTexture(GL_TEXTURE0);
         Bind(skybox);
+        Bind(skybox_mesh);
         Draw(skybox_mesh);
         glEnable(GL_DEPTH_TEST);
         glDepthMask(GL_TRUE);
@@ -316,44 +371,43 @@ int main() {
 
         ChangeOrientation(camera);
 
-        Bind(mesh);
+        Bind(cube_mesh);
 
         int scale = 100;
         int pos = 100;
         int mini = 10;
 
         // front
-        LoadMatrix(shader, "model_mat", TempModel({0, 0, -pos}, {0, 0, 0}, {scale, scale, mini}));
-        Draw(mesh);
+        LoadMatrix(shader, "model_mat", TranslateScale({0, 0, -pos}, {scale, scale, mini}));
+        LoadVec3(shader, "object_color", {0.05, 0.06, 0.12});
+        Draw(cube_mesh);
         
-        /*
-        // back
-        LoadMatrix(shader, "model_mat", TempModel({0, 0, pos}, {0, 0, 0}, {scale, scale, mini}));
-        Draw(mesh);
+        f32 sphere_size = 2;
+         
+        // Targets
+        Bind(sphere_mesh);
+        LoadMatrix(shader, "model_mat", TranslateScale({0, 0, -pos + 10}, {sphere_size, sphere_size, sphere_size}));
+        LoadVec3(shader, "object_color", {1.0, 0.0, 0.0});
+        Draw(sphere_mesh);
 
-        // left
-        LoadMatrix(shader, "model_mat", TempModel({-pos, 0, 0}, {0, 0, 0}, {mini, scale, scale}));
-        Draw(mesh);
-        
-        // right
-        LoadMatrix(shader, "model_mat", TempModel({pos, 0, 0}, {0, 0, 0}, {mini, scale, scale}));
-        Draw(mesh);
-        
-        // floor
-        LoadMatrix(shader, "model_mat", TempModel({0, -pos, 0}, {0, 0, 0}, {scale, mini, scale}));
-        Draw(mesh);
-        */
+        // Crosshair        
+
+        Crosshair crosshair = {2, 1, 4};
+        DrawCrosshair(crosshair, ui_shader, window, crosshair_mesh);
 
         UpdateWindow(&window);
     }
 
     DestroyCamera(camera);
     DestroyCubeMap(skybox);
-    DestroyMesh(mesh);
+    DestroyMesh(cube_mesh);
+    DestroyMesh(sphere_mesh);
     DestroyWindow(&window);
     DestroySimpleMesh(skybox_mesh);
+    DestroySimpleMesh(crosshair_mesh);
     DestroyShader(skybox_shader);
     DestroyShader(shader);
+    DestroyShader(ui_shader);
 
 	return 0;
 }

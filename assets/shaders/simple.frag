@@ -17,6 +17,7 @@ uniform vec3 view_pos;
 uniform vec3 object_color;
 
 void main() {
+    /*
     vec3 ambient = light.ambient * object_color;
 
     vec3 norm = normalize(out_normal);
@@ -30,6 +31,6 @@ void main() {
     float spec = pow(max(dot(view_dir, reflect_dir), 0.0), 32);
     vec3 specular = light.specular * (specular_strength * spec);
 
-    vec3 result = ambient + diffuse + specular;
-    out_color = vec4(out_normal, 1.0);
+    vec3 result = ambient + diffuse + specular;*/
+    out_color = vec4(object_color, 1.0);
 }

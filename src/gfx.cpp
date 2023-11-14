@@ -67,8 +67,11 @@ void DestroySimpleMesh(SimpleMesh *mesh) {
     free(mesh);
 }
 
-void Draw(SimpleMesh *mesh) {
+void Bind(SimpleMesh *mesh) {
     glBindVertexArray(mesh->vao);
+}
+
+void Draw(SimpleMesh *mesh) {
     glDrawArrays(GL_TRIANGLES, 0, mesh->vertices_count);
 }
 
