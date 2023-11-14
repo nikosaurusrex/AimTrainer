@@ -14,7 +14,8 @@ bool CheckOpenGLError() {
 }
 
 Shader *CreateShader(const char *vert_path, const char *frag_path) {
-    Shader *shader = (Shader *) malloc(sizeof(Shader));
+    // TODO: not use new - replace stl containers with custom ones
+    Shader *shader = new Shader;
 
     char *vert_source = ReadEntireFile(vert_path);
     char *frag_source = ReadEntireFile(frag_path);
@@ -59,7 +60,8 @@ Shader *CreateShader(const char *vert_path, const char *frag_path) {
 void DestroyShader(Shader *shader) {
     glDeleteProgram(shader->id);
 
-    free(shader);
+    // TODO: not use delete - replace stl containers with custom ones
+    delete shader;
 }
 
 GLuint LoadShader(const char *source, GLenum type, const char *type_name) {
@@ -114,8 +116,14 @@ void Use(Shader *shader) {
 }
 
 GLint GetUniformLocation(Shader *shader, String name) {
-    /* @Todo: use cache */
-    return glGetUniformLocation(shader->id, name.data);
+    auto find = shader->uniform_locations.find(name);
+    if (find != shader->uniform_locations.end()) {
+        return find->second;
+    }
+
+    GLint location = glGetUniformLocation(shader->id, name.c_str());
+    shader->uniform_locations[name] = location;
+    return location;
 }
 
 void LoadInt(Shader *shader, String name, s32 value) {

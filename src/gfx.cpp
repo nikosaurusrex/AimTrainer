@@ -132,10 +132,10 @@ Texture LoadTexture(String file_path, GLint format) {
 
     stbi_set_flip_vertically_on_load(true);
     s32 read_mode = format == GL_RGBA ? STBI_rgb_alpha : STBI_rgb;
-    u8 *image = stbi_load(file_path.data, &w, &h, 0, read_mode);
+    u8 *image = stbi_load(file_path.c_str(), &w, &h, 0, read_mode);
 
     if (!image) {
-        LogFatal("Failed to load texture '%s'", to_c_string(file_path));
+        LogFatal("Failed to load texture '%s'", file_path.c_str());
     }
 
     glGenTextures(1, &texture);

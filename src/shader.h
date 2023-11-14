@@ -6,6 +6,7 @@
 #include <glm/glm.hpp>
 
 struct Shader {
+    HashMap<String, GLint> uniform_locations;
     GLuint id;
 };
 

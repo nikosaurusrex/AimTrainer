@@ -3,7 +3,8 @@
 in vec4 out_frag_pos;
 in vec3 out_normal;
 
-out vec4 out_color;
+layout(location=0) out vec4 out_color;
+layout(location=1) out int out_entity;
 
 struct DirectionalLight {
     vec3 direction;
@@ -15,6 +16,7 @@ struct DirectionalLight {
 uniform DirectionalLight light;
 uniform vec3 view_pos;
 uniform vec3 object_color;
+uniform int in_entity;
 
 void main() {
     /*
@@ -32,5 +34,8 @@ void main() {
     vec3 specular = light.specular * (specular_strength * spec);
 
     vec3 result = ambient + diffuse + specular;*/
+
+
     out_color = vec4(object_color, 1.0);
+    out_entity = in_entity;
 }

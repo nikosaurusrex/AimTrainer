@@ -1,5 +1,3 @@
-#include <stdio.h>
-
 #include "common.h"
 
 #include "glm/ext/matrix_clip_space.hpp"
@@ -8,8 +6,14 @@
 #include <glm/gtx/quaternion.hpp>
 #include <glm/gtx/transform.hpp>
 
+#include "imgui.h"
+#include "backends/imgui_impl_opengl3.h"
+#include "backends/imgui_impl_glfw.h"
+
 #include "camera.h"
+#include "framebuffer.h"
 #include "gfx.h"
+#include "imgui_impl.h"
 #include "shader.h"
 
 struct Window {
@@ -18,9 +22,17 @@ struct Window {
     s32 height;
 };
 
+struct Crosshair {
+    f32 size;
+    f32 thickness;
+    f32 gap;
+};
+
 struct AimTrainer {
     Window window;
     Camera *camera;
+    Framebuffer *framebuffer;
+    Crosshair *crosshair;
     
     f64 last_mouse_x;
     f64 last_mouse_y;
@@ -30,14 +42,8 @@ struct AimTrainer {
     f64 m_pitch;
 };
 
-struct Crosshair {
-    f32 size;
-    f32 thickness;
-    f32 gap;
-};
-
 const f32 SKYBOX_SIZE = 200.0f;
-f32 skybox_vertices [] = {
+static f32 skybox_vertices [] = {
 	-SKYBOX_SIZE, -SKYBOX_SIZE, -SKYBOX_SIZE,
 	SKYBOX_SIZE, -SKYBOX_SIZE, -SKYBOX_SIZE,
 	SKYBOX_SIZE,  SKYBOX_SIZE, -SKYBOX_SIZE,
@@ -76,7 +82,7 @@ f32 skybox_vertices [] = {
 	-SKYBOX_SIZE,  SKYBOX_SIZE, -SKYBOX_SIZE,
 };
 
-f32 retangle_vertices[] = {
+static f32 retangle_vertices[] = {
 	-1, -1, 0,
     1, -1, 0,
     1, 1, 0,
@@ -84,6 +90,9 @@ f32 retangle_vertices[] = {
     -1, 1, 0,
     -1, -1, 0
 };
+
+static f32 target_x = 0;
+static f32 target_y = 0;
 
 void LogInfo(const char *format, ...) {
     va_list args;
@@ -132,6 +141,11 @@ char *ReadEntireFile(const char *file_path) {
     return data;
 }
 
+f32 RandF(f32 min, f32 max) {
+    f32 scale = rand() / (f32) RAND_MAX;
+    return min + scale * (max - min);
+}
+
 void WindowResizeCallback(GLFWwindow *handle, s32 width, s32 height) {
     AimTrainer *trainer = (AimTrainer *) glfwGetWindowUserPointer(handle);
     if (!trainer) {
@@ -159,7 +173,22 @@ void InitWindow(Window *window, AimTrainer *trainer) {
 }
 
 void MouseButtonCallback(GLFWwindow *handle, s32 button, s32 action, s32 mods) {
+    AimTrainer *trainer = (AimTrainer *) glfwGetWindowUserPointer(handle);
+    if (!trainer) {
+        return;
+    }
 
+    if (action == GLFW_PRESS) {
+        // Hit Registration
+        Bind(trainer->framebuffer);
+        int hit = Read(trainer->framebuffer, 1, trainer->window.width / 2, trainer->window.height / 2);
+        Unbind(trainer->framebuffer);
+
+        if (hit > 0) {
+            target_x = RandF(-50, 50);
+            target_y = RandF(-50, 50);
+        }
+    }
 }
 
 void CursorPositionCallback(GLFWwindow *handle, f64 xpos, f64 ypos) {
@@ -257,10 +286,6 @@ void DestroyWindow(Window *window) {
     glfwTerminate();
 }
 
-void Render() {
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-}
-
 glm::mat4 TranslateScale(glm::vec3 trans, glm::vec3 scale) {
     return glm::translate(glm::mat4(1.0f), trans) * 
                 glm::scale(glm::mat4(1.0f), scale);
@@ -272,7 +297,10 @@ glm::mat4 TranslateRotateScale(glm::vec3 trans, glm::vec3 rot, glm::vec3 scale) 
                 glm::scale(glm::mat4(1.0f), scale);
 }
 
-void DrawCrosshair(Crosshair crosshair, Shader *ui_shader, Window window, SimpleMesh *crosshair_mesh) {
+void DrawCrosshair(AimTrainer *trainer, Shader *ui_shader, SimpleMesh *crosshair_mesh) {
+    Crosshair crosshair = *trainer->crosshair;
+    Window window = trainer->window;
+
     glm::mat4 ui_proj = glm::ortho(0.0f, (f32) window.width, (f32) window.height, 0.0f, -1.0f, 1.0f);
     glm::mat4 center_mat = glm::translate(glm::mat4(1.0f), glm::vec3(window.width / 2, window.height / 2, 0.0f));
 
@@ -302,13 +330,47 @@ void DrawCrosshair(Crosshair crosshair, Shader *ui_shader, Window window, Simple
     Draw(crosshair_mesh);
 }
 
+void OpenGLLog(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* user_param) {
+    switch (severity) {
+    case GL_DEBUG_SEVERITY_HIGH:
+        LogFatal("[OpenGL Debug HIGH] %s", message);
+        break;
+    case GL_DEBUG_SEVERITY_MEDIUM:
+        LogInfo("[OpenGL Debug MEDIUM] %s", message);
+        break;
+    case GL_DEBUG_SEVERITY_LOW:
+        LogInfo("[OpenGL Debug LOW] %s", message);
+        break;
+    case GL_DEBUG_SEVERITY_NOTIFICATION:
+        LogInfo("[OpenGL Debug NOTIFICATION] %s", message);
+        break;
+    }
+}
+
+void EnableOpenGLDebugging() {
+    glDebugMessageCallback(OpenGLLog, nullptr);
+    glEnable(GL_DEBUG_OUTPUT);
+    glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+}
+
+void CheckOpenGLErrors() {
+    s32 err = glGetError();
+    while (err != GL_NO_ERROR) {
+        LogFatal("glError: %d", err);
+        err = glGetError();
+    }
+}
+
 int main() {  
+    srand(time(NULL));
+
 	AimTrainer trainer = {};
 
     InitGLFW();
     Window window = CreateWindow("AimTrainer", 1920, 1080);
 
     InitWindow(&window, &trainer);
+    InitializeImGui(window.handle);
 
     glfwSetInputMode(window.handle, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
@@ -331,8 +393,16 @@ int main() {
     Shader *ui_shader = CreateShader("assets/shaders/ui.vert", "assets/shaders/ui.frag");
     SimpleMesh *crosshair_mesh = CreateSimpleMesh(retangle_vertices, 18);
 
+    Framebuffer *framebuffer = CreateFramebuffer(window.width, window.height, {GL_RGBA, GL_RED_INTEGER, GL_DEPTH24_STENCIL8});
+    Bind(framebuffer);
+    Reload(framebuffer);
+    
+    Crosshair crosshair = {2, 1, 4};
+
     trainer.window = window;
     trainer.camera = camera;
+    trainer.framebuffer = framebuffer;
+    trainer.crosshair = &crosshair;
     trainer.sensitivity = 2.068;
     trainer.m_yaw = 0.022;
     trainer.m_pitch = 0.022;
@@ -349,7 +419,9 @@ int main() {
     glEnable(GL_MULTISAMPLE);  
 
     while (WindowShouldClose(&window)) {
-        Render();
+        Bind(framebuffer);
+        
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         Use(skybox_shader);
         LoadMatrix(skybox_shader, "view_matrix", camera->view);
@@ -380,23 +452,51 @@ int main() {
         // front
         LoadMatrix(shader, "model_mat", TranslateScale({0, 0, -pos}, {scale, scale, mini}));
         LoadVec3(shader, "object_color", {0.05, 0.06, 0.12});
+        LoadInt(shader, "in_entity", 0);
         Draw(cube_mesh);
         
         f32 sphere_size = 2;
          
         // Targets
         Bind(sphere_mesh);
-        LoadMatrix(shader, "model_mat", TranslateScale({0, 0, -pos + 10}, {sphere_size, sphere_size, sphere_size}));
+        LoadMatrix(shader, "model_mat", TranslateScale({target_x, target_y, -pos + 10}, {sphere_size, sphere_size, sphere_size}));
         LoadVec3(shader, "object_color", {1.0, 0.0, 0.0});
+        LoadInt(shader, "in_entity", 1);
         Draw(sphere_mesh);
 
         // Crosshair        
 
-        Crosshair crosshair = {2, 1, 4};
-        DrawCrosshair(crosshair, ui_shader, window, crosshair_mesh);
+        DrawCrosshair(&trainer, ui_shader, crosshair_mesh);
 
+        Unbind(framebuffer);
+
+        // ImGui Draw Framebuffer
+        BeginImGuiFrame();
+
+        ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
+        ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
+ 
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+        ImGui::Begin("AimTrainer", 0, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoResize);
+        
+        ImGui::GetWindowDrawList()->AddImage(
+            (void *) GetAttachment(framebuffer, 0), 
+            ImVec2(0, 0), 
+            ImVec2(framebuffer->width, framebuffer->height), 
+            ImVec2(0, 1), 
+            ImVec2(1, 0)
+        );
+
+        ImGui::End();
+        ImGui::PopStyleVar();
+
+        EndImGuiFrame();
+
+        // Update Window - Poll Events and Swap Buffers
         UpdateWindow(&window);
     }
+
+    DeinitializeImGui();
 
     DestroyCamera(camera);
     DestroyCubeMap(skybox);
@@ -408,6 +508,7 @@ int main() {
     DestroyShader(skybox_shader);
     DestroyShader(shader);
     DestroyShader(ui_shader);
+    DestroyFramebuffer(framebuffer);
 
 	return 0;
 }
