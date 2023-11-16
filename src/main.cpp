@@ -15,6 +15,7 @@
 #include "gfx.h"
 #include "imgui_impl.h"
 #include "shader.h"
+#include "sound.h"
 
 struct Window {
 	GLFWwindow *handle;
@@ -28,11 +29,30 @@ struct Crosshair {
     f32 gap;
 };
 
+struct Target {
+    f32 x;
+    f32 y;
+};
+
+struct Sounds {
+    int hit_sound;
+};
+
+struct Level {
+    Array<Target> targets;
+    int target_count;
+    f32 target_size;
+};
+
 struct AimTrainer {
     Window window;
     Camera *camera;
     Framebuffer *framebuffer;
     Crosshair *crosshair;
+    Level *level;
+    bool show_settings = false;
+
+    Sounds sounds;
     
     f64 last_mouse_x;
     f64 last_mouse_y;
@@ -91,9 +111,6 @@ static f32 retangle_vertices[] = {
     -1, -1, 0
 };
 
-static f32 target_x = 0;
-static f32 target_y = 0;
-
 void LogInfo(const char *format, ...) {
     va_list args;
     va_start(args, format);
@@ -123,6 +140,37 @@ void LogFatal(const char *format, ...) {
     exit(EXIT_FAILURE);
 }
 
+void OpenGLLog(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* user_param) {
+    switch (severity) {
+    case GL_DEBUG_SEVERITY_HIGH:
+        LogFatal("[OpenGL Debug HIGH] %s", message);
+        break;
+    case GL_DEBUG_SEVERITY_MEDIUM:
+        LogInfo("[OpenGL Debug MEDIUM] %s", message);
+        break;
+    case GL_DEBUG_SEVERITY_LOW:
+        LogInfo("[OpenGL Debug LOW] %s", message);
+        break;
+    case GL_DEBUG_SEVERITY_NOTIFICATION:
+        LogInfo("[OpenGL Debug NOTIFICATION] %s", message);
+        break;
+    }
+}
+
+void EnableOpenGLDebugging() {
+    glDebugMessageCallback(OpenGLLog, nullptr);
+    glEnable(GL_DEBUG_OUTPUT);
+    glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+}
+
+void CheckOpenGLErrors() {
+    s32 err = glGetError();
+    while (err != GL_NO_ERROR) {
+        LogFatal("glError: %d", err);
+        err = glGetError();
+    }
+}
+
 char *ReadEntireFile(const char *file_path) {
     FILE *file = fopen(file_path, "rb");
     if (!file) return 0;
@@ -144,6 +192,20 @@ char *ReadEntireFile(const char *file_path) {
 f32 RandF(f32 min, f32 max) {
     f32 scale = rand() / (f32) RAND_MAX;
     return min + scale * (max - min);
+}
+
+void SetToRandomLocation(Target *target) {
+    target->x = RandF(-30, 30);
+    target->y = RandF(-30, 30);
+}
+
+void SpawnTargets(Level *level) {
+    level->targets.clear();
+
+    for (int i = 0; i < level->target_count; ++i) {
+        level->targets.push_back({});
+        SetToRandomLocation(&level->targets[i]);
+    }
 }
 
 void WindowResizeCallback(GLFWwindow *handle, s32 width, s32 height) {
@@ -172,9 +234,14 @@ void InitWindow(Window *window, AimTrainer *trainer) {
     glViewport(0, 0, w, h);
 }
 
+
 void MouseButtonCallback(GLFWwindow *handle, s32 button, s32 action, s32 mods) {
     AimTrainer *trainer = (AimTrainer *) glfwGetWindowUserPointer(handle);
     if (!trainer) {
+        return;
+    }
+    
+    if (trainer->show_settings) {
         return;
     }
 
@@ -184,9 +251,11 @@ void MouseButtonCallback(GLFWwindow *handle, s32 button, s32 action, s32 mods) {
         int hit = Read(trainer->framebuffer, 1, trainer->window.width / 2, trainer->window.height / 2);
         Unbind(trainer->framebuffer);
 
-        if (hit > 0) {
-            target_x = RandF(-50, 50);
-            target_y = RandF(-50, 50);
+        if (hit > 0 && hit <= trainer->level->target_count) {
+            PlaySoundById(trainer->sounds.hit_sound);
+
+            Target *target = &trainer->level->targets[hit - 1];
+            SetToRandomLocation(target);
         }
     }
 }
@@ -194,6 +263,10 @@ void MouseButtonCallback(GLFWwindow *handle, s32 button, s32 action, s32 mods) {
 void CursorPositionCallback(GLFWwindow *handle, f64 xpos, f64 ypos) {
     AimTrainer *trainer = (AimTrainer *) glfwGetWindowUserPointer(handle);
     if (!trainer) {
+        return;
+    }
+
+    if (trainer->show_settings) {
         return;
     }
 
@@ -214,10 +287,24 @@ void CursorPositionCallback(GLFWwindow *handle, f64 xpos, f64 ypos) {
 }
 
 void KeyCallback(GLFWwindow *handle, s32 key, s32 scancode, s32 action, s32 mods) {
+    AimTrainer *trainer = (AimTrainer *) glfwGetWindowUserPointer(handle);
+    if (!trainer) {
+        return;
+    }
+
     if (action == GLFW_RELEASE) {
         if (key == GLFW_KEY_Q) {
             glfwTerminate();
             exit(EXIT_SUCCESS);
+        } else if (key == GLFW_KEY_ESCAPE) {
+            trainer->show_settings = !trainer->show_settings;
+
+            if (trainer->show_settings) {
+                glfwSetInputMode(trainer->window.handle, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            } else {
+                glfwSetInputMode(trainer->window.handle, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                SpawnTargets(trainer->level);
+            }
         }
     }
 }
@@ -243,8 +330,6 @@ Window CreateWindow(const char *title, int width, int height) {
 
     glfwMakeContextCurrent(window.handle);
 
-	glfwSwapInterval(1);
-
     glewInit();
 
     LogInfo("OpenGL Info:");
@@ -261,12 +346,12 @@ Window CreateWindow(const char *title, int width, int height) {
         glfwSetInputMode(window.handle, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
         LogInfo("Raw Input Enabled");
     }
-    
+
     glfwSetWindowSizeCallback(window.handle, WindowResizeCallback);
     glfwSetMouseButtonCallback(window.handle, MouseButtonCallback);
     glfwSetCursorPosCallback(window.handle, CursorPositionCallback);
     glfwSetKeyCallback(window.handle, KeyCallback);
-
+    
     glfwShowWindow(window.handle);
 
     return window;
@@ -330,35 +415,26 @@ void DrawCrosshair(AimTrainer *trainer, Shader *ui_shader, SimpleMesh *crosshair
     Draw(crosshair_mesh);
 }
 
-void OpenGLLog(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* user_param) {
-    switch (severity) {
-    case GL_DEBUG_SEVERITY_HIGH:
-        LogFatal("[OpenGL Debug HIGH] %s", message);
-        break;
-    case GL_DEBUG_SEVERITY_MEDIUM:
-        LogInfo("[OpenGL Debug MEDIUM] %s", message);
-        break;
-    case GL_DEBUG_SEVERITY_LOW:
-        LogInfo("[OpenGL Debug LOW] %s", message);
-        break;
-    case GL_DEBUG_SEVERITY_NOTIFICATION:
-        LogInfo("[OpenGL Debug NOTIFICATION] %s", message);
-        break;
-    }
-}
+void DrawSettings(AimTrainer *trainer, int fps) {
+    Crosshair *crosshair = trainer->crosshair;
+    Level *level = trainer->level;
 
-void EnableOpenGLDebugging() {
-    glDebugMessageCallback(OpenGLLog, nullptr);
-    glEnable(GL_DEBUG_OUTPUT);
-    glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
-}
+    ImGui::Begin("Settings");
+    ImGui::LabelText("fps_text", "%d FPS", fps);
 
-void CheckOpenGLErrors() {
-    s32 err = glGetError();
-    while (err != GL_NO_ERROR) {
-        LogFatal("glError: %d", err);
-        err = glGetError();
+    int count_before = level->target_count;
+    ImGui::SliderInt("target_count", &level->target_count, 1, 10);
+    if (count_before != level->target_count) {
+        SpawnTargets(level);
     }
+
+    ImGui::SliderFloat("target_size", &level->target_size, 0.5, 10);
+
+    ImGui::SliderFloat("crosshair_size", &crosshair->size, 1, 10);
+    ImGui::SliderFloat("crosshair_thickness", &crosshair->thickness, 0.1, 5);
+    ImGui::SliderFloat("crosshair_gap", &crosshair->gap, 0, 8);
+
+    ImGui::End();
 }
 
 int main() {  
@@ -393,30 +469,47 @@ int main() {
     Shader *ui_shader = CreateShader("assets/shaders/ui.vert", "assets/shaders/ui.frag");
     SimpleMesh *crosshair_mesh = CreateSimpleMesh(retangle_vertices, 18);
 
+    Mesh *cube_mesh = LoadObjFile("assets/models/cube.obj");
+    Mesh *sphere_mesh = LoadObjFile("assets/models/sphere.obj");
+
     Framebuffer *framebuffer = CreateFramebuffer(window.width, window.height, {GL_RGBA, GL_RED_INTEGER, GL_DEPTH24_STENCIL8});
     Bind(framebuffer);
-    Reload(framebuffer);
-    
+
+    /* find better solution. Problem is crosshair covering center */
+    Framebuffer *crosshair_framebuffer = CreateFramebuffer(window.width, window.height, {GL_RGBA});
+   
+    InitializeSound();
+    Sounds sounds;
+    sounds.hit_sound = LoadSound("assets/sounds/hit.wav");
+
     Crosshair crosshair = {2, 1, 4};
+
+    Level level;
+    level.target_count = 6;
+    level.target_size = 1.5f;
 
     trainer.window = window;
     trainer.camera = camera;
     trainer.framebuffer = framebuffer;
     trainer.crosshair = &crosshair;
+    trainer.level = &level;
+    trainer.sounds = sounds;
     trainer.sensitivity = 2.068;
     trainer.m_yaw = 0.022;
     trainer.m_pitch = 0.022;
 
     glfwGetCursorPos(window.handle, &trainer.last_mouse_x, &trainer.last_mouse_y);
-
-    Mesh *cube_mesh = LoadObjFile("assets/models/cube.obj");
-    Mesh *sphere_mesh = LoadObjFile("assets/models/sphere.obj");
-
     CalculateCamera(camera, window.width, window.height);
+
+    SpawnTargets(&level);
 
     glDisable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_MULTISAMPLE);  
+
+    int frames = 0;
+    int fps = 0;
+    double last_time = glfwGetTime();
 
     while (WindowShouldClose(&window)) {
         Bind(framebuffer);
@@ -454,21 +547,25 @@ int main() {
         LoadVec3(shader, "object_color", {0.05, 0.06, 0.12});
         LoadInt(shader, "in_entity", 0);
         Draw(cube_mesh);
-        
-        f32 sphere_size = 2;
          
-        // Targets
-        Bind(sphere_mesh);
-        LoadMatrix(shader, "model_mat", TranslateScale({target_x, target_y, -pos + 10}, {sphere_size, sphere_size, sphere_size}));
-        LoadVec3(shader, "object_color", {1.0, 0.0, 0.0});
-        LoadInt(shader, "in_entity", 1);
-        Draw(sphere_mesh);
+         // Targets
+        
+        f32 sphere_size = level.target_size;
+        for (int i = 0; i < level.targets.size(); ++i) {
+            Target target = level.targets[i];
+                        
+            Bind(sphere_mesh);
+            LoadMatrix(shader, "model_mat", TranslateScale({target.x, target.y, -pos + 10}, {sphere_size, sphere_size, sphere_size}));
+            LoadVec3(shader, "object_color", {1.0, 0.0, 0.0});
+            LoadInt(shader, "in_entity", i + 1);
+            Draw(sphere_mesh);
+        }
+        Unbind(framebuffer);
 
         // Crosshair        
-
+        Bind(crosshair_framebuffer);
         DrawCrosshair(&trainer, ui_shader, crosshair_mesh);
-
-        Unbind(framebuffer);
+        Unbind(crosshair_framebuffer);
 
         // ImGui Draw Framebuffer
         BeginImGuiFrame();
@@ -479,6 +576,7 @@ int main() {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
         ImGui::Begin("AimTrainer", 0, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoResize);
         
+
         ImGui::GetWindowDrawList()->AddImage(
             (void *) GetAttachment(framebuffer, 0), 
             ImVec2(0, 0), 
@@ -486,9 +584,32 @@ int main() {
             ImVec2(0, 1), 
             ImVec2(1, 0)
         );
+        
+        ImGui::GetWindowDrawList()->AddImage(
+            (void *) GetAttachment(crosshair_framebuffer, 0), 
+            ImVec2(0, 0), 
+            ImVec2(crosshair_framebuffer->width, crosshair_framebuffer->height), 
+            ImVec2(0, 1), 
+            ImVec2(1, 0)
+        );
 
         ImGui::End();
         ImGui::PopStyleVar();
+        
+        frames++;
+        if (glfwGetTime() - last_time >= 1.0) {
+            last_time = glfwGetTime();
+
+            printf("%d\n", fps);
+
+            fps = frames;
+            frames = 0;
+        }
+
+        if (trainer.show_settings) {
+            DrawSettings(&trainer, fps);
+            ImGui::SetWindowFocus("Settings");
+        }
 
         EndImGuiFrame();
 
@@ -509,6 +630,7 @@ int main() {
     DestroyShader(shader);
     DestroyShader(ui_shader);
     DestroyFramebuffer(framebuffer);
+    DestroySound();
 
 	return 0;
 }
