@@ -27,11 +27,26 @@ struct Crosshair {
     f32 size;
     f32 thickness;
     f32 gap;
+    glm::vec3 color;
 };
 
 struct Target {
     f32 x;
     f32 y;
+    f32 z;
+
+    union {
+        /* 2d*/
+        struct {
+            f32 target_x;
+            f32 target_y;
+        };
+        /* 3d - circular */
+        struct {
+            f32 z;
+            f32 yaw;
+        };
+    };
 };
 
 struct Sounds {
@@ -42,6 +57,13 @@ struct Level {
     Array<Target> targets;
     int target_count;
     f32 target_size;
+    f32 target_distance;
+    glm::vec3 target_color;
+    glm::vec3 wall_color;
+
+    f32 target_speed_x;
+    f32 target_speed_y;
+    bool circular;
 };
 
 struct AimTrainer {
@@ -51,6 +73,7 @@ struct AimTrainer {
     Crosshair *crosshair;
     Level *level;
     bool show_settings = false;
+    bool draw_skybox;
 
     Sounds sounds;
     
@@ -110,6 +133,8 @@ static f32 retangle_vertices[] = {
     -1, 1, 0,
     -1, -1, 0
 };
+
+const f32 MAP_SIZE = 50.0f;
 
 void LogInfo(const char *format, ...) {
     va_list args;
@@ -194,18 +219,122 @@ f32 RandF(f32 min, f32 max) {
     return min + scale * (max - min);
 }
 
+void SetToRandomYaw(Target *target, f32 distance) {
+    target->yaw = RandF(-3.14, 3.14);
+    
+    target->x = cos(target->yaw) * distance;
+    target->z = sin(target->yaw) * distance;
+    target->y = 0;
+}
+
 void SetToRandomLocation(Target *target) {
-    target->x = RandF(-30, 30);
-    target->y = RandF(-30, 30);
+    target->x = RandF(-MAP_SIZE, MAP_SIZE);
+    target->y = RandF(-MAP_SIZE, MAP_SIZE);
 }
 
 void SpawnTargets(Level *level) {
     level->targets.clear();
 
-    for (int i = 0; i < level->target_count; ++i) {
-        level->targets.push_back({});
-        SetToRandomLocation(&level->targets[i]);
+    if (level->circular) {
+        for (int i = 0; i < level->target_count; ++i) {
+            level->targets.push_back({});
+            Target *target = &level->targets[i];
+
+            SetToRandomYaw(target, level->target_distance);
+        }
+    } else {   
+        for (int i = 0; i < level->target_count; ++i) {
+            level->targets.push_back({});
+            SetToRandomLocation(&level->targets[i]);
+        }
     }
+}
+
+void MoveTargetX(Target *target, f32 speed_x) {
+    if (abs(target->x - target->target_x) < speed_x) {
+        target->x = target->target_x;
+        
+        target->target_x = RandF(-MAP_SIZE, MAP_SIZE);
+
+    } else if (target->x < target->target_x) {
+        target->x += speed_x;
+    } else if (target->x > target->target_x) {
+        target->x -= speed_x;
+    }
+}
+
+void MoveTargetY(Target *target, f32 speed_y) {
+    if (abs(target->y - target->target_y) < speed_y) {
+        target->y = target->target_y;
+
+        target->target_y = RandF(-MAP_SIZE, MAP_SIZE);
+
+    } else if (target->y < target->target_y) {
+        target->y += speed_y;
+    } else if (target->y > target->target_y) {
+        target->y -= speed_y;
+    }
+}
+
+void MoveTargets(Level *level, f64 delta) {
+    f32 speed_x = (level->target_speed_x * 10) * delta;
+    f32 speed_y = (level->target_speed_y * 10) * delta;
+
+    if (speed_x > 0 && speed_y > 0) {
+        for (int i = 0; i < level->targets.size(); ++i) {
+            Target *target = &level->targets[i];
+
+            MoveTargetX(target, speed_x);
+            MoveTargetY(target, speed_y);
+        }
+    } else if (speed_x > 0) {
+        for (int i = 0; i < level->targets.size(); ++i) {
+            Target *target = &level->targets[i];
+
+            MoveTargetX(target, speed_x);
+        }
+    } else if (speed_y > 0) {
+        for (int i = 0; i < level->targets.size(); ++i) {
+            Target *target = &level->targets[i];
+
+            MoveTargetY(target, speed_y);
+        }
+    }
+}
+
+void LoadGlobalSettings(AimTrainer *trainer) {
+    FILE *f = fopen("global", "rb");
+    if (!f) {
+        return;
+    }
+    
+    Crosshair *crosshair = trainer->crosshair;
+
+    fread(&trainer->draw_skybox, sizeof(bool), 1, f);
+    fread(&crosshair->size, sizeof(f32), 1, f);
+    fread(&crosshair->thickness, sizeof(f32), 1, f);
+    fread(&crosshair->gap, sizeof(f32), 1, f);
+    fread(&crosshair->color, sizeof(f32), 3, f);
+
+    fclose(f);
+}
+
+void SaveGlobalSettings(AimTrainer *trainer) {
+    FILE *f = fopen("global", "wb");
+    if (!f) {
+        fprintf(stderr, "Failed to open global settings file");
+        exit(1);
+    }
+
+    Crosshair *crosshair = trainer->crosshair;
+
+    fwrite(&trainer->draw_skybox, sizeof(bool), 1, f);
+    fwrite(&crosshair->size, sizeof(f32), 1, f);
+    fwrite(&crosshair->thickness, sizeof(f32), 1, f);
+    fwrite(&crosshair->gap, sizeof(f32), 1, f);
+    fwrite(&crosshair->color, sizeof(f32), 3, f);
+
+    fclose(f);
 }
 
 void WindowResizeCallback(GLFWwindow *handle, s32 width, s32 height) {
@@ -234,7 +363,6 @@ void InitWindow(Window *window, AimTrainer *trainer) {
     glViewport(0, 0, w, h);
 }
 
-
 void MouseButtonCallback(GLFWwindow *handle, s32 button, s32 action, s32 mods) {
     AimTrainer *trainer = (AimTrainer *) glfwGetWindowUserPointer(handle);
     if (!trainer) {
@@ -255,7 +383,11 @@ void MouseButtonCallback(GLFWwindow *handle, s32 button, s32 action, s32 mods) {
             PlaySoundById(trainer->sounds.hit_sound);
 
             Target *target = &trainer->level->targets[hit - 1];
-            SetToRandomLocation(target);
+            if (trainer->level->circular) {
+                SetToRandomYaw(target, trainer->level->target_distance);
+            } else {
+                SetToRandomLocation(target);
+            }
         }
     }
 }
@@ -302,6 +434,8 @@ void KeyCallback(GLFWwindow *handle, s32 key, s32 scancode, s32 action, s32 mods
             if (trainer->show_settings) {
                 glfwSetInputMode(trainer->window.handle, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
             } else {
+                SaveGlobalSettings(trainer);
+
                 glfwSetInputMode(trainer->window.handle, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
                 SpawnTargets(trainer->level);
             }
@@ -382,6 +516,11 @@ glm::mat4 TranslateRotateScale(glm::vec3 trans, glm::vec3 rot, glm::vec3 scale) 
                 glm::scale(glm::mat4(1.0f), scale);
 }
 
+
+PositionalLight GetWhiteLight(glm::vec3 pos) {
+    return PositionalLight{glm::vec4(0.0f, 0.0f, 0.0f, 1.0f), glm::vec4(1.0f), glm::vec4(1.0f), pos};
+}
+
 void DrawCrosshair(AimTrainer *trainer, Shader *ui_shader, SimpleMesh *crosshair_mesh) {
     Crosshair crosshair = *trainer->crosshair;
     Window window = trainer->window;
@@ -392,6 +531,7 @@ void DrawCrosshair(AimTrainer *trainer, Shader *ui_shader, SimpleMesh *crosshair
     Use(ui_shader);
     LoadMatrix(ui_shader, "proj_mat", ui_proj);
     LoadMatrix(ui_shader, "view_mat", center_mat);
+    LoadVec3(ui_shader, "in_color", crosshair.color);
     Bind(crosshair_mesh);
 
     f32 size = crosshair.size;
@@ -423,18 +563,85 @@ void DrawSettings(AimTrainer *trainer, int fps) {
     ImGui::LabelText("fps_text", "%d FPS", fps);
 
     int count_before = level->target_count;
-    ImGui::SliderInt("target_count", &level->target_count, 1, 10);
+    ImGui::SliderInt("target_count", &level->target_count, 1, 20);
     if (count_before != level->target_count) {
         SpawnTargets(level);
     }
 
     ImGui::SliderFloat("target_size", &level->target_size, 0.5, 10);
+    ImGui::SliderFloat("target_distance", &level->target_distance, 1, 100);
+    ImGui::ColorEdit3("target_color", &level->target_color.x);
+    ImGui::SliderFloat("target_speed_x", &level->target_speed_x, 0, 10);
+    ImGui::SliderFloat("target_speed_y", &level->target_speed_y, 0, 10);
+    ImGui::ColorEdit3("wall_color", &level->wall_color.x);
+    ImGui::Checkbox("draw_skybox", &trainer->draw_skybox);
+    ImGui::Checkbox("circular", &level->circular);
 
     ImGui::SliderFloat("crosshair_size", &crosshair->size, 1, 10);
     ImGui::SliderFloat("crosshair_thickness", &crosshair->thickness, 0.1, 5);
     ImGui::SliderFloat("crosshair_gap", &crosshair->gap, 0, 8);
+    ImGui::ColorEdit3("crosshair_color", &crosshair->color.x);
 
     ImGui::End();
+}
+
+
+void DrawLevel(AimTrainer *trainer, Shader *shader, Mesh *sphere_mesh, Mesh *cube_mesh) {
+    Bind(cube_mesh);
+
+    int scale = 100;
+    int pos = 100;
+    int mini = 10;
+
+    Level *level = trainer->level;
+
+    if (!trainer->draw_skybox) {
+        // front
+        LoadMatrix(shader, "model_mat", TranslateScale({0, 0, -pos}, {scale, scale, mini}));
+        LoadVec3(shader, "object_color", level->wall_color);
+        LoadInt(shader, "in_entity", 0);
+        Draw(cube_mesh);
+
+        // back
+        LoadMatrix(shader, "model_mat", TranslateRotateScale({0, 0, pos}, {0, 180, 0}, {scale, scale, mini}));
+        Draw(cube_mesh);
+
+        // left
+        LoadMatrix(shader, "model_mat", TranslateScale({-pos, 0, 0}, {mini, scale, scale}));
+        Draw(cube_mesh);
+        
+        // right
+        LoadMatrix(shader, "model_mat", TranslateRotateScale({pos, 0, 0}, {0, 0, 0}, {mini, scale, scale}));
+        Draw(cube_mesh);
+
+        // floor
+        LoadMatrix(shader, "model_mat", TranslateScale({0, -pos, 0}, {scale, mini, scale}));
+        Draw(cube_mesh);
+        
+        // ceiling
+        LoadMatrix(shader, "model_mat", TranslateScale({0, pos, 0}, {scale, mini, scale}));
+        Draw(cube_mesh);
+    }
+    
+    // Targets
+    LoadVec3(shader, "object_color", level->target_color);
+    f32 sphere_size = level->target_size;
+
+    for (int i = 0; i < level->targets.size(); ++i) {
+        Target target = level->targets[i];
+                        
+        Bind(sphere_mesh);
+
+        if (level->circular) {
+            LoadMatrix(shader, "model_mat", TranslateScale({target.x, target.y, target.z}, {sphere_size, sphere_size, sphere_size}));
+        } else {
+            LoadMatrix(shader, "model_mat", TranslateScale({target.x, target.y, -pos + 10}, {sphere_size, sphere_size, sphere_size}));
+        }
+
+        LoadInt(shader, "in_entity", i + 1);
+        Draw(sphere_mesh);
+    }
+
 }
 
 int main() {  
@@ -451,12 +658,12 @@ int main() {
     glfwSetInputMode(window.handle, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
     const char *skybox_faces[6] = {
-        "assets/textures/right.jpg",
-        "assets/textures/left.jpg",
-        "assets/textures/top.jpg",
-        "assets/textures/bottom.jpg",
-        "assets/textures/front.jpg",
-        "assets/textures/back.jpg"
+        "assets/textures/px.png",
+        "assets/textures/nx.png",
+        "assets/textures/py.png",
+        "assets/textures/ny.png",
+        "assets/textures/pz.png",
+        "assets/textures/nz.png"
     };
 
     SimpleMesh *skybox_mesh = CreateSimpleMesh(&skybox_vertices[0], 108);
@@ -482,11 +689,19 @@ int main() {
     Sounds sounds;
     sounds.hit_sound = LoadSound("assets/sounds/hit.wav");
 
-    Crosshair crosshair = {2, 1, 4};
+    glm::vec3 light_pos = glm::vec3(0, 0, 0);
+
+    Crosshair crosshair = {2, 1, 4, glm::vec3(0.0, 1.0, 1.0)};
 
     Level level;
     level.target_count = 6;
     level.target_size = 1.5f;
+    level.target_distance = 50;
+    level.wall_color = glm::vec3(0.05, 0.06, 0.12);
+    level.target_color = glm::vec3(1.0, 0.0, 0.0);
+    level.target_speed_x = 0;
+    level.target_speed_y = 0;
+    level.circular = false;
 
     trainer.window = window;
     trainer.camera = camera;
@@ -497,6 +712,9 @@ int main() {
     trainer.sensitivity = 2.068;
     trainer.m_yaw = 0.022;
     trainer.m_pitch = 0.022;
+    trainer.draw_skybox = false;
+
+    LoadGlobalSettings(&trainer);
 
     glfwGetCursorPos(window.handle, &trainer.last_mouse_x, &trainer.last_mouse_y);
     CalculateCamera(camera, window.width, window.height);
@@ -509,26 +727,41 @@ int main() {
 
     int frames = 0;
     int fps = 0;
-    double last_time = glfwGetTime();
+    f64 last_time_fps = glfwGetTime();
+
+    f64 last_time = glfwGetTime();
+    f64 fps_delay = 1.0 / 240.0;
+
+    LoadVec3(shader, "light_pos", light_pos);
 
     while (WindowShouldClose(&window)) {
+        f64 delta = glfwGetTime() - last_time;
+        if (delta < fps_delay) {
+            continue;
+        }
+        last_time = glfwGetTime();
+
+        MoveTargets(&level, delta);
+
         Bind(framebuffer);
         
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        Use(skybox_shader);
-        LoadMatrix(skybox_shader, "view_matrix", camera->view);
-        LoadMatrix(skybox_shader, "proj_matrix", camera->projection);
+        if (trainer.draw_skybox) {
+            Use(skybox_shader);
+            LoadMatrix(skybox_shader, "view_matrix", camera->view);
+            LoadMatrix(skybox_shader, "proj_matrix", camera->projection);
 
-        glDepthMask(GL_FALSE);
-        glDisable(GL_DEPTH_TEST);
+            glDepthMask(GL_FALSE);
+            glDisable(GL_DEPTH_TEST);
 
-        glActiveTexture(GL_TEXTURE0);
-        Bind(skybox);
-        Bind(skybox_mesh);
-        Draw(skybox_mesh);
-        glEnable(GL_DEPTH_TEST);
-        glDepthMask(GL_TRUE);
+            glActiveTexture(GL_TEXTURE0);
+            Bind(skybox);
+            Bind(skybox_mesh);
+            Draw(skybox_mesh);
+            glEnable(GL_DEPTH_TEST);
+            glDepthMask(GL_TRUE);
+        }
 
         Use(shader);
         LoadMatrix(shader, "proj_mat", camera->projection);
@@ -536,30 +769,8 @@ int main() {
 
         ChangeOrientation(camera);
 
-        Bind(cube_mesh);
-
-        int scale = 100;
-        int pos = 100;
-        int mini = 10;
-
-        // front
-        LoadMatrix(shader, "model_mat", TranslateScale({0, 0, -pos}, {scale, scale, mini}));
-        LoadVec3(shader, "object_color", {0.05, 0.06, 0.12});
-        LoadInt(shader, "in_entity", 0);
-        Draw(cube_mesh);
+        DrawLevel(&trainer, shader, sphere_mesh, cube_mesh);
          
-         // Targets
-        
-        f32 sphere_size = level.target_size;
-        for (int i = 0; i < level.targets.size(); ++i) {
-            Target target = level.targets[i];
-                        
-            Bind(sphere_mesh);
-            LoadMatrix(shader, "model_mat", TranslateScale({target.x, target.y, -pos + 10}, {sphere_size, sphere_size, sphere_size}));
-            LoadVec3(shader, "object_color", {1.0, 0.0, 0.0});
-            LoadInt(shader, "in_entity", i + 1);
-            Draw(sphere_mesh);
-        }
         Unbind(framebuffer);
 
         // Crosshair        
@@ -597,10 +808,8 @@ int main() {
         ImGui::PopStyleVar();
         
         frames++;
-        if (glfwGetTime() - last_time >= 1.0) {
-            last_time = glfwGetTime();
-
-            printf("%d\n", fps);
+        if (glfwGetTime() - last_time_fps >= 1.0) {
+            last_time_fps = glfwGetTime();
 
             fps = frames;
             frames = 0;

@@ -2,3 +2,5 @@
 *.sln
 *.vc*
 x64/**
+global
+imgui.ini

@@ -18,6 +18,7 @@
         "xutility": "cpp",
         "xiosbase": "cpp",
         "chrono": "cpp",
-        "initializer_list": "cpp"
+        "initializer_list": "cpp",
+        "cstdlib": "cpp"
     }
 }
