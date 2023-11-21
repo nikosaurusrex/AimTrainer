@@ -30,7 +30,14 @@ struct Crosshair {
     glm::vec3 color;
 };
 
+enum TargetType {
+    CIRCLE,
+    BODY
+};
+
 struct Target {
+    int type;
+    int health;
     f32 x;
     f32 y;
     f32 z;
@@ -58,6 +65,8 @@ struct Level {
     int target_count;
     f32 target_size;
     f32 target_distance;
+    int target_type;
+    int target_health;
     glm::vec3 target_color;
     glm::vec3 wall_color;
 
@@ -239,13 +248,19 @@ void SpawnTargets(Level *level) {
         for (int i = 0; i < level->target_count; ++i) {
             level->targets.push_back({});
             Target *target = &level->targets[i];
+            target->health = level->target_health;
+            target->type = level->target_type;
 
             SetToRandomYaw(target, level->target_distance);
         }
     } else {   
         for (int i = 0; i < level->target_count; ++i) {
             level->targets.push_back({});
-            SetToRandomLocation(&level->targets[i]);
+            Target *target = &level->targets[i];
+            target->health = level->target_health;
+            target->type = level->target_type;
+
+            SetToRandomLocation(target);
         }
     }
 }
@@ -383,11 +398,16 @@ void MouseButtonCallback(GLFWwindow *handle, s32 button, s32 action, s32 mods) {
             PlaySoundById(trainer->sounds.hit_sound);
 
             Target *target = &trainer->level->targets[hit - 1];
-            if (trainer->level->circular) {
-                SetToRandomYaw(target, trainer->level->target_distance);
-            } else {
-                SetToRandomLocation(target);
-            }
+            target->health--;
+
+            if (target->health <= 0) {
+                target->health = trainer->level->target_health;
+                if (trainer->level->circular) {
+                    SetToRandomYaw(target, trainer->level->target_distance);
+                } else {
+                    SetToRandomLocation(target);
+                }
+            }         
         }
     }
 }
@@ -570,6 +590,8 @@ void DrawSettings(AimTrainer *trainer, int fps) {
 
     ImGui::SliderFloat("target_size", &level->target_size, 0.5, 10);
     ImGui::SliderFloat("target_distance", &level->target_distance, 1, 100);
+    ImGui::SliderInt("target_health", &level->target_health, 1, 100);
+    ImGui::SliderInt("target_type", &level->target_type, 0, 1);
     ImGui::ColorEdit3("target_color", &level->target_color.x);
     ImGui::SliderFloat("target_speed_x", &level->target_speed_x, 0, 10);
     ImGui::SliderFloat("target_speed_y", &level->target_speed_y, 0, 10);
@@ -586,7 +608,7 @@ void DrawSettings(AimTrainer *trainer, int fps) {
 }
 
 
-void DrawLevel(AimTrainer *trainer, Shader *shader, Mesh *sphere_mesh, Mesh *cube_mesh) {
+void DrawLevel(AimTrainer *trainer, Shader *shader, Mesh *sphere_mesh, Mesh *cube_mesh, Mesh *body_mesh) {
     Bind(cube_mesh);
 
     int scale = 100;
@@ -624,23 +646,38 @@ void DrawLevel(AimTrainer *trainer, Shader *shader, Mesh *sphere_mesh, Mesh *cub
     }
     
     // Targets
-    LoadVec3(shader, "object_color", level->target_color);
     f32 sphere_size = level->target_size;
 
     for (int i = 0; i < level->targets.size(); ++i) {
         Target target = level->targets[i];
                         
-        Bind(sphere_mesh);
+        LoadInt(shader, "in_entity", i + 1);
+
+        glm::vec3 translate;
 
         if (level->circular) {
-            LoadMatrix(shader, "model_mat", TranslateScale({target.x, target.y, target.z}, {sphere_size, sphere_size, sphere_size}));
+            translate = glm::vec3(target.x, target.y, target.z);
         } else {
-            LoadMatrix(shader, "model_mat", TranslateScale({target.x, target.y, -pos + 10}, {sphere_size, sphere_size, sphere_size}));
+            translate = glm::vec3(target.x, target.y, -pos + 10);
         }
 
-        LoadInt(shader, "in_entity", i + 1);
-        Draw(sphere_mesh);
-    }
+        if (target.type == CIRCLE) {
+            LoadVec3(shader, "object_color", level->target_color);
+            LoadMatrix(shader, "model_mat", TranslateScale(translate, {sphere_size, sphere_size, sphere_size}));   
+            Bind(sphere_mesh);
+            Draw(sphere_mesh);
+        } else {
+            LoadMatrix(shader, "model_mat", TranslateScale(translate, {sphere_size, sphere_size, sphere_size}));
+            LoadVec3(shader, "object_color", glm::vec3(1.0));
+            Bind(sphere_mesh);
+            Draw(sphere_mesh);
+            
+            LoadMatrix(shader, "model_mat", TranslateScale(translate, {sphere_size, sphere_size*1.2, sphere_size}));
+            LoadVec3(shader, "object_color", level->target_color);
+            Bind(body_mesh);
+            Draw(body_mesh);
+        }
+    } 
 
 }
 
@@ -678,6 +715,7 @@ int main() {
 
     Mesh *cube_mesh = LoadObjFile("assets/models/cube.obj");
     Mesh *sphere_mesh = LoadObjFile("assets/models/sphere.obj");
+    Mesh *body_mesh = LoadObjFile("assets/models/body.obj");
 
     Framebuffer *framebuffer = CreateFramebuffer(window.width, window.height, {GL_RGBA, GL_RED_INTEGER, GL_DEPTH24_STENCIL8});
     Bind(framebuffer);
@@ -702,6 +740,8 @@ int main() {
     level.target_speed_x = 0;
     level.target_speed_y = 0;
     level.circular = false;
+    level.target_type = CIRCLE;
+    level.target_health = 1;
 
     trainer.window = window;
     trainer.camera = camera;
@@ -769,7 +809,7 @@ int main() {
 
         ChangeOrientation(camera);
 
-        DrawLevel(&trainer, shader, sphere_mesh, cube_mesh);
+        DrawLevel(&trainer, shader, sphere_mesh, cube_mesh, body_mesh);
          
         Unbind(framebuffer);
 
@@ -832,6 +872,7 @@ int main() {
     DestroyCubeMap(skybox);
     DestroyMesh(cube_mesh);
     DestroyMesh(sphere_mesh);
+    DestroyMesh(body_mesh);
     DestroyWindow(&window);
     DestroySimpleMesh(skybox_mesh);
     DestroySimpleMesh(crosshair_mesh);
