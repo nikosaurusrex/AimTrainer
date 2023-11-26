@@ -2,6 +2,7 @@
 
 static void attach_color_texture(GLuint id, GLint type, s32 width, s32 height, s32 index) {
     GLint internal;
+
     if (type == GL_RGBA) {
         internal = GL_RGBA8;
     } else if (type == GL_RED_INTEGER) {
@@ -33,9 +34,9 @@ static void attach_depth_texture(GLuint id, GLint type, s32 width, s32 height) {
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, id, 0);
 }
 
-Framebuffer *CreateFramebuffer(s32 width, s32 height, Array<GLint> attachments) {
+framebuffer_t *CreateFramebuffer(s32 width, s32 height, array_t<GLint> attachments) {
     // TODO: not use new - replace stl containers with custom ones
-    Framebuffer *fb = new Framebuffer;
+    framebuffer_t *fb = new framebuffer_t;
     fb->width = width;
     fb->height = height;
     
@@ -52,7 +53,7 @@ Framebuffer *CreateFramebuffer(s32 width, s32 height, Array<GLint> attachments) 
     return fb;
 }
 
-void DestroyFramebuffer(Framebuffer *fb) {
+void DestroyFramebuffer(framebuffer_t *fb) {
     glDeleteFramebuffers(1, &fb->id);
     glDeleteTextures(fb->color_attachments.size(), fb->color_attachments.data());
     glDeleteTextures(1, &fb->depth_attachment);
@@ -61,7 +62,7 @@ void DestroyFramebuffer(Framebuffer *fb) {
     delete fb;
 }
 
-void Reload(Framebuffer *fb) {
+void Reload(framebuffer_t *fb) {
     if (fb->id) {
         glDeleteFramebuffers(1, &fb->id);
         glDeleteTextures(fb->color_attachments.size(), fb->color_attachments.data());
@@ -93,7 +94,7 @@ void Reload(Framebuffer *fb) {
 
     if (fb->color_attachments.size() > 1) {
         GLenum buffers[4] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2, GL_COLOR_ATTACHMENT3 };
-		glDrawBuffers(fb->color_attachments.size(), buffers);
+        glDrawBuffers(fb->color_attachments.size(), buffers);
     } else if (fb->color_attachments.empty()) {
         glDrawBuffer(GL_NONE);
     }
@@ -101,27 +102,27 @@ void Reload(Framebuffer *fb) {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-void Bind(Framebuffer *fb) {
+void Bind(framebuffer_t *fb) {
     glBindFramebuffer(GL_FRAMEBUFFER, fb->id);
     glViewport(0, 0, fb->width, fb->height);
 }
 
-void Unbind(Framebuffer *fb) {
+void Unbind(framebuffer_t *fb) {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-void Resize(Framebuffer *fb, s32 width, s32 height) {
+void Resize(framebuffer_t *fb, s32 width, s32 height) {
     fb->width = width;
     fb->height = height;
 
     Reload(fb);
 }
 
-GLuint GetAttachment(Framebuffer *fb, u32 index) {
+GLuint GetAttachment(framebuffer_t *fb, u32 index) {
     return fb->color_attachments[index];
 }
 
-s32 Read(Framebuffer *fb, u32 index, s32 x, s32 y) {
+s32 Read(framebuffer_t *fb, u32 index, s32 x, s32 y) {
     glReadBuffer(GL_COLOR_ATTACHMENT0 + index);
 
     s32 value;
@@ -129,7 +130,7 @@ s32 Read(Framebuffer *fb, u32 index, s32 x, s32 y) {
     return value;
 }
 
-void Clear(Framebuffer *fb, u32 index, s32 value) {
+void Clear(framebuffer_t *fb, u32 index, s32 value) {
     // glClearTexImage(color_attachments[index], 0, color_attachments_types[index], GL_INT, &value);
 }
 

@@ -17,25 +17,31 @@
 #include "shader.h"
 #include "sound.h"
 
-struct Window {
-	GLFWwindow *handle;
-    s32 width;
-    s32 height;
+struct window_t {
+    GLFWwindow  *handle;
+    s32         width;
+    s32         height;
 };
 
-struct Crosshair {
-    f32 size;
-    f32 thickness;
-    f32 gap;
-    glm::vec3 color;
+struct settings_t {
+    f32         crosshair_size;
+    f32         crosshair_thickness;
+    f32         crosshair_gap;
+    glm::vec3   crosshair_color;
+    s32         max_fps;
+    f32         sensitivity;
+    bool        draw_skybox;
+
+    // internal - not stored
+    f64         fps_delay;
 };
 
-enum TargetType {
+enum targettype {
     CIRCLE,
     BODY
 };
 
-struct Target {
+struct target_t {
     int type;
     int health;
     f32 x;
@@ -56,94 +62,98 @@ struct Target {
     };
 };
 
-struct Sounds {
+struct sounds_t {
     int hit_sound;
 };
 
-struct Level {
-    Array<Target> targets;
-    int target_count;
-    f32 target_size;
-    f32 target_distance;
-    int target_type;
-    int target_health;
-    glm::vec3 target_color;
-    glm::vec3 wall_color;
+struct level_t {
+    array_t<target_t>   targets;
+    int                 target_count;
+    f32                 target_size;
+    f32                 target_distance;
+    int                 target_type;
+    int                 target_health;
+    glm::vec3           target_color;
+    glm::vec3           wall_color;
 
-    f32 target_speed_x;
-    f32 target_speed_y;
-    bool circular;
+    f32                 target_speed_x;
+    f32                 target_speed_y;
+    bool                circular;
 };
 
-struct AimTrainer {
-    Window window;
-    Camera *camera;
-    Framebuffer *framebuffer;
-    Crosshair *crosshair;
-    Level *level;
-    bool show_settings = false;
-    bool draw_skybox;
+struct aimtrainer_t {
+    window_t        window;
+    camera_t        *camera;
+    framebuffer_t   *framebuffer;
+    settings_t      *settings;
+    level_t         *level;
+    bool            show_settings = false;
 
-    Sounds sounds;
+    sounds_t        sounds;
     
-    f64 last_mouse_x;
-    f64 last_mouse_y;
+    f64             last_mouse_x;
+    f64             last_mouse_y;
 
-    f64 sensitivity;
-    f64 m_yaw;
-    f64 m_pitch;
+    f64             m_yaw;
+    f64             m_pitch;
 };
 
 const f32 SKYBOX_SIZE = 200.0f;
+
 static f32 skybox_vertices [] = {
-	-SKYBOX_SIZE, -SKYBOX_SIZE, -SKYBOX_SIZE,
-	SKYBOX_SIZE, -SKYBOX_SIZE, -SKYBOX_SIZE,
-	SKYBOX_SIZE,  SKYBOX_SIZE, -SKYBOX_SIZE,
-	SKYBOX_SIZE,  SKYBOX_SIZE, -SKYBOX_SIZE,
-	-SKYBOX_SIZE,  SKYBOX_SIZE, -SKYBOX_SIZE,
-	-SKYBOX_SIZE, -SKYBOX_SIZE, -SKYBOX_SIZE,
-	-SKYBOX_SIZE, -SKYBOX_SIZE,  SKYBOX_SIZE,
-	SKYBOX_SIZE, -SKYBOX_SIZE,  SKYBOX_SIZE,
-	SKYBOX_SIZE,  SKYBOX_SIZE,  SKYBOX_SIZE,
-	SKYBOX_SIZE,  SKYBOX_SIZE,  SKYBOX_SIZE,
-	-SKYBOX_SIZE,  SKYBOX_SIZE,  SKYBOX_SIZE,
-	-SKYBOX_SIZE, -SKYBOX_SIZE,  SKYBOX_SIZE,
-	-SKYBOX_SIZE,  SKYBOX_SIZE,  SKYBOX_SIZE,
-	-SKYBOX_SIZE,  SKYBOX_SIZE, -SKYBOX_SIZE,
-	-SKYBOX_SIZE, -SKYBOX_SIZE, -SKYBOX_SIZE,
-	-SKYBOX_SIZE, -SKYBOX_SIZE, -SKYBOX_SIZE,
-	-SKYBOX_SIZE, -SKYBOX_SIZE,  SKYBOX_SIZE,
-	-SKYBOX_SIZE,  SKYBOX_SIZE,  SKYBOX_SIZE,
-	SKYBOX_SIZE,  SKYBOX_SIZE,  SKYBOX_SIZE,
-	SKYBOX_SIZE,  SKYBOX_SIZE, -SKYBOX_SIZE,
-	SKYBOX_SIZE, -SKYBOX_SIZE, -SKYBOX_SIZE,
-	SKYBOX_SIZE, -SKYBOX_SIZE, -SKYBOX_SIZE,
-	SKYBOX_SIZE, -SKYBOX_SIZE,  SKYBOX_SIZE,
-	SKYBOX_SIZE,  SKYBOX_SIZE,  SKYBOX_SIZE,
-	-SKYBOX_SIZE, -SKYBOX_SIZE, -SKYBOX_SIZE,
-	SKYBOX_SIZE, -SKYBOX_SIZE, -SKYBOX_SIZE,
-	SKYBOX_SIZE, -SKYBOX_SIZE,  SKYBOX_SIZE,
-	SKYBOX_SIZE, -SKYBOX_SIZE,  SKYBOX_SIZE,
-	-SKYBOX_SIZE, -SKYBOX_SIZE,  SKYBOX_SIZE,
-	-SKYBOX_SIZE, -SKYBOX_SIZE, -SKYBOX_SIZE,
-	-SKYBOX_SIZE,  SKYBOX_SIZE, -SKYBOX_SIZE,
-	SKYBOX_SIZE,  SKYBOX_SIZE, -SKYBOX_SIZE,
-	SKYBOX_SIZE,  SKYBOX_SIZE,  SKYBOX_SIZE,
-	SKYBOX_SIZE,  SKYBOX_SIZE,  SKYBOX_SIZE,
-	-SKYBOX_SIZE,  SKYBOX_SIZE,  SKYBOX_SIZE,
-	-SKYBOX_SIZE,  SKYBOX_SIZE, -SKYBOX_SIZE,
+    -SKYBOX_SIZE,   -SKYBOX_SIZE,   -SKYBOX_SIZE,
+    SKYBOX_SIZE,    SKYBOX_SIZE,    -SKYBOX_SIZE,
+    SKYBOX_SIZE,    SKYBOX_SIZE,    -SKYBOX_SIZE,
+    SKYBOX_SIZE,    SKYBOX_SIZE,    -SKYBOX_SIZE,
+    -SKYBOX_SIZE,    SKYBOX_SIZE,   -SKYBOX_SIZE,
+    -SKYBOX_SIZE,   -SKYBOX_SIZE,   -SKYBOX_SIZE,
+    -SKYBOX_SIZE,   -SKYBOX_SIZE,   SKYBOX_SIZE,
+    SKYBOX_SIZE,    SKYBOX_SIZE,    SKYBOX_SIZE,
+    SKYBOX_SIZE,    SKYBOX_SIZE,    SKYBOX_SIZE,
+    SKYBOX_SIZE,    SKYBOX_SIZE,    SKYBOX_SIZE,
+    -SKYBOX_SIZE,    SKYBOX_SIZE,   SKYBOX_SIZE,
+    -SKYBOX_SIZE,   -SKYBOX_SIZE,   SKYBOX_SIZE,
+    -SKYBOX_SIZE,    SKYBOX_SIZE,   SKYBOX_SIZE,
+    -SKYBOX_SIZE,    SKYBOX_SIZE,   -SKYBOX_SIZE,
+    -SKYBOX_SIZE,   -SKYBOX_SIZE,   -SKYBOX_SIZE,
+    -SKYBOX_SIZE,   -SKYBOX_SIZE,   -SKYBOX_SIZE,
+    -SKYBOX_SIZE,   -SKYBOX_SIZE,   SKYBOX_SIZE,
+    -SKYBOX_SIZE,    SKYBOX_SIZE,   SKYBOX_SIZE,
+    SKYBOX_SIZE,    SKYBOX_SIZE,    SKYBOX_SIZE,
+    SKYBOX_SIZE,    SKYBOX_SIZE,    -SKYBOX_SIZE,
+    SKYBOX_SIZE,    SKYBOX_SIZE,    -SKYBOX_SIZE,
+    SKYBOX_SIZE,    SKYBOX_SIZE,    -SKYBOX_SIZE,
+    SKYBOX_SIZE,    SKYBOX_SIZE,    SKYBOX_SIZE,
+    SKYBOX_SIZE,    SKYBOX_SIZE,    SKYBOX_SIZE,
+    -SKYBOX_SIZE,   -SKYBOX_SIZE,   -SKYBOX_SIZE,
+    SKYBOX_SIZE,    SKYBOX_SIZE,    -SKYBOX_SIZE,
+    SKYBOX_SIZE,    SKYBOX_SIZE,    SKYBOX_SIZE,
+    SKYBOX_SIZE,    SKYBOX_SIZE,    SKYBOX_SIZE,
+    -SKYBOX_SIZE,   -SKYBOX_SIZE,   SKYBOX_SIZE,
+    -SKYBOX_SIZE,   -SKYBOX_SIZE,   -SKYBOX_SIZE,
+    -SKYBOX_SIZE,    SKYBOX_SIZE,   -SKYBOX_SIZE,
+    SKYBOX_SIZE,    SKYBOX_SIZE,    -SKYBOX_SIZE,
+    SKYBOX_SIZE,    SKYBOX_SIZE,    SKYBOX_SIZE,
+    SKYBOX_SIZE,    SKYBOX_SIZE,    SKYBOX_SIZE,
+    -SKYBOX_SIZE,    SKYBOX_SIZE,   SKYBOX_SIZE,
+    -SKYBOX_SIZE,    SKYBOX_SIZE,   -SKYBOX_SIZE,
 };
 
 static f32 retangle_vertices[] = {
-	-1, -1, 0,
-    1, -1, 0,
-    1, 1, 0,
-    1, 1, 0,
-    -1, 1, 0,
+    -1, -1, 0,
+     1, -1, 0,
+     1,  1, 0,
+     1,  1, 0,
+    -1,  1, 0,
     -1, -1, 0
 };
 
 const f32 MAP_SIZE = 50.0f;
+
+static bool mouse_pressed       = false;
+static bool shoot               = false;
+static f64 shoot_cooldown       = 0.0;
+const f64 SHOOT_COOLDOWN_RESET  = 0.1;
 
 void LogInfo(const char *format, ...) {
     va_list args;
@@ -228,7 +238,7 @@ f32 RandF(f32 min, f32 max) {
     return min + scale * (max - min);
 }
 
-void SetToRandomYaw(Target *target, f32 distance) {
+void SetToRandomYaw(target_t *target, f32 distance) {
     target->yaw = RandF(-3.14, 3.14);
     
     target->x = cos(target->yaw) * distance;
@@ -236,18 +246,18 @@ void SetToRandomYaw(Target *target, f32 distance) {
     target->y = 0;
 }
 
-void SetToRandomLocation(Target *target) {
+void SetToRandomLocation(target_t *target) {
     target->x = RandF(-MAP_SIZE, MAP_SIZE);
     target->y = RandF(-MAP_SIZE, MAP_SIZE);
 }
 
-void SpawnTargets(Level *level) {
+void SpawnTargets(level_t *level) {
     level->targets.clear();
 
     if (level->circular) {
         for (int i = 0; i < level->target_count; ++i) {
             level->targets.push_back({});
-            Target *target = &level->targets[i];
+            target_t *target = &level->targets[i];
             target->health = level->target_health;
             target->type = level->target_type;
 
@@ -256,7 +266,7 @@ void SpawnTargets(Level *level) {
     } else {   
         for (int i = 0; i < level->target_count; ++i) {
             level->targets.push_back({});
-            Target *target = &level->targets[i];
+            target_t *target = &level->targets[i];
             target->health = level->target_health;
             target->type = level->target_type;
 
@@ -265,7 +275,7 @@ void SpawnTargets(Level *level) {
     }
 }
 
-void MoveTargetX(Target *target, f32 speed_x) {
+void MoveTargetX(target_t *target, f32 speed_x) {
     if (abs(target->x - target->target_x) < speed_x) {
         target->x = target->target_x;
         
@@ -278,7 +288,7 @@ void MoveTargetX(Target *target, f32 speed_x) {
     }
 }
 
-void MoveTargetY(Target *target, f32 speed_y) {
+void MoveTargetY(target_t *target, f32 speed_y) {
     if (abs(target->y - target->target_y) < speed_y) {
         target->y = target->target_y;
 
@@ -291,74 +301,103 @@ void MoveTargetY(Target *target, f32 speed_y) {
     }
 }
 
-void MoveTargets(Level *level, f64 delta) {
+void MoveTargets(level_t *level, f64 delta) {
     f32 speed_x = (level->target_speed_x * 10) * delta;
     f32 speed_y = (level->target_speed_y * 10) * delta;
 
     if (speed_x > 0 && speed_y > 0) {
         for (int i = 0; i < level->targets.size(); ++i) {
-            Target *target = &level->targets[i];
+            target_t *target = &level->targets[i];
 
             MoveTargetX(target, speed_x);
             MoveTargetY(target, speed_y);
         }
     } else if (speed_x > 0) {
         for (int i = 0; i < level->targets.size(); ++i) {
-            Target *target = &level->targets[i];
+            target_t *target = &level->targets[i];
 
             MoveTargetX(target, speed_x);
         }
     } else if (speed_y > 0) {
         for (int i = 0; i < level->targets.size(); ++i) {
-            Target *target = &level->targets[i];
+            target_t *target = &level->targets[i];
 
             MoveTargetY(target, speed_y);
         }
     }
 }
 
-void LoadGlobalSettings(AimTrainer *trainer) {
+void Shoot(aimtrainer_t *trainer) {
+    shoot_cooldown = SHOOT_COOLDOWN_RESET;
+
+     // Hit Registration
+    Bind(trainer->framebuffer);
+    int hit = Read(trainer->framebuffer, 1, trainer->window.width / 2, trainer->window.height / 2);
+    Unbind(trainer->framebuffer);
+
+    if (hit > 0 && hit <= trainer->level->target_count) {
+        PlaySoundById(trainer->sounds.hit_sound);
+
+        target_t *target = &trainer->level->targets[hit - 1];
+        target->health--;
+
+        if (target->health <= 0) {
+            target->health = trainer->level->target_health;
+            if (trainer->level->circular) {
+                SetToRandomYaw(target, trainer->level->target_distance);
+            } else {
+                SetToRandomLocation(target);
+            }
+        }         
+    }
+}
+
+void LoadGlobalSettings(aimtrainer_t *trainer) {
     FILE *f = fopen("global", "rb");
     if (!f) {
         return;
     }
-    
-    Crosshair *crosshair = trainer->crosshair;
 
-    fread(&trainer->draw_skybox, sizeof(bool), 1, f);
-    fread(&crosshair->size, sizeof(f32), 1, f);
-    fread(&crosshair->thickness, sizeof(f32), 1, f);
-    fread(&crosshair->gap, sizeof(f32), 1, f);
-    fread(&crosshair->color, sizeof(f32), 3, f);
+    settings_t *settings = trainer->settings;
+
+    fread(&settings->crosshair_size, sizeof(f32), 1, f);
+    fread(&settings->crosshair_thickness, sizeof(f32), 1, f);
+    fread(&settings->crosshair_gap, sizeof(f32), 1, f);
+    fread(&settings->crosshair_color, sizeof(f32), 3, f);
+    fread(&settings->sensitivity, sizeof(f32), 1, f);
+    fread(&settings->max_fps, sizeof(s32), 1, f);
+    fread(&settings->draw_skybox, sizeof(bool), 1, f);
 
     fclose(f);
 }
 
-void SaveGlobalSettings(AimTrainer *trainer) {
+void SaveGlobalSettings(aimtrainer_t *trainer) {
     FILE *f = fopen("global", "wb");
     if (!f) {
         fprintf(stderr, "Failed to open global settings file");
         exit(1);
     }
 
-    Crosshair *crosshair = trainer->crosshair;
+    settings_t *settings = trainer->settings;
 
-    fwrite(&trainer->draw_skybox, sizeof(bool), 1, f);
-    fwrite(&crosshair->size, sizeof(f32), 1, f);
-    fwrite(&crosshair->thickness, sizeof(f32), 1, f);
-    fwrite(&crosshair->gap, sizeof(f32), 1, f);
-    fwrite(&crosshair->color, sizeof(f32), 3, f);
+    fwrite(&settings->crosshair_size, sizeof(f32), 1, f);
+    fwrite(&settings->crosshair_thickness, sizeof(f32), 1, f);
+    fwrite(&settings->crosshair_gap, sizeof(f32), 1, f);
+    fwrite(&settings->crosshair_color, sizeof(f32), 3, f);
+    fwrite(&settings->sensitivity, sizeof(f32), 1, f);
+    fwrite(&settings->max_fps, sizeof(s32), 1, f);
+    fwrite(&settings->draw_skybox, sizeof(bool), 1, f);
 
     fclose(f);
 }
 
 void WindowResizeCallback(GLFWwindow *handle, s32 width, s32 height) {
-    AimTrainer *trainer = (AimTrainer *) glfwGetWindowUserPointer(handle);
+    aimtrainer_t *trainer = (aimtrainer_t *) glfwGetWindowUserPointer(handle);
     if (!trainer) {
         return;
     }
 
-    Window *window = &trainer->window;
+    window_t *window = &trainer->window;
 
     window->width = width;
     window->height = height;
@@ -366,7 +405,7 @@ void WindowResizeCallback(GLFWwindow *handle, s32 width, s32 height) {
     glViewport(0, 0, window->width, window->height);
 }
 
-void InitWindow(Window *window, AimTrainer *trainer) {
+void InitWindow(window_t *window, aimtrainer_t *trainer) {
     int w, h;
     
     glfwSetWindowUserPointer(window->handle, trainer);
@@ -379,7 +418,7 @@ void InitWindow(Window *window, AimTrainer *trainer) {
 }
 
 void MouseButtonCallback(GLFWwindow *handle, s32 button, s32 action, s32 mods) {
-    AimTrainer *trainer = (AimTrainer *) glfwGetWindowUserPointer(handle);
+    aimtrainer_t *trainer = (aimtrainer_t *) glfwGetWindowUserPointer(handle);
     if (!trainer) {
         return;
     }
@@ -389,31 +428,18 @@ void MouseButtonCallback(GLFWwindow *handle, s32 button, s32 action, s32 mods) {
     }
 
     if (action == GLFW_PRESS) {
-        // Hit Registration
-        Bind(trainer->framebuffer);
-        int hit = Read(trainer->framebuffer, 1, trainer->window.width / 2, trainer->window.height / 2);
-        Unbind(trainer->framebuffer);
+        mouse_pressed = true;
 
-        if (hit > 0 && hit <= trainer->level->target_count) {
-            PlaySoundById(trainer->sounds.hit_sound);
+        shoot = true;
+    }
 
-            Target *target = &trainer->level->targets[hit - 1];
-            target->health--;
-
-            if (target->health <= 0) {
-                target->health = trainer->level->target_health;
-                if (trainer->level->circular) {
-                    SetToRandomYaw(target, trainer->level->target_distance);
-                } else {
-                    SetToRandomLocation(target);
-                }
-            }         
-        }
+    if (action == GLFW_RELEASE) {
+        mouse_pressed = false;
     }
 }
 
 void CursorPositionCallback(GLFWwindow *handle, f64 xpos, f64 ypos) {
-    AimTrainer *trainer = (AimTrainer *) glfwGetWindowUserPointer(handle);
+    aimtrainer_t *trainer = (aimtrainer_t *) glfwGetWindowUserPointer(handle);
     if (!trainer) {
         return;
     }
@@ -422,16 +448,18 @@ void CursorPositionCallback(GLFWwindow *handle, f64 xpos, f64 ypos) {
         return;
     }
 
+    settings_t *settings = trainer->settings;
+
     f64 dx = xpos - trainer->last_mouse_x;
     f64 dy = ypos - trainer->last_mouse_y;
 
-    f64 *yaw = &trainer->camera->yaw;
+    f64 *yaw   = &trainer->camera->yaw;
     f64 *pitch = &trainer->camera->pitch;
 
-    *yaw += dx * trainer->m_yaw * trainer->sensitivity;
-    *pitch += dy * trainer->m_pitch * trainer->sensitivity;
+    *yaw    += dx * trainer->m_yaw * settings->sensitivity;
+    *pitch  += dy * trainer->m_pitch * settings->sensitivity;
 
-    if (*pitch > 89.0) *pitch = 89.0;
+    if (*pitch > 89.0)  *pitch = 89.0;
     if (*pitch < -89.0) *pitch = -89.0;
 
     trainer->last_mouse_x = xpos;
@@ -439,7 +467,7 @@ void CursorPositionCallback(GLFWwindow *handle, f64 xpos, f64 ypos) {
 }
 
 void KeyCallback(GLFWwindow *handle, s32 key, s32 scancode, s32 action, s32 mods) {
-    AimTrainer *trainer = (AimTrainer *) glfwGetWindowUserPointer(handle);
+    aimtrainer_t *trainer = (aimtrainer_t *) glfwGetWindowUserPointer(handle);
     if (!trainer) {
         return;
     }
@@ -455,6 +483,7 @@ void KeyCallback(GLFWwindow *handle, s32 key, s32 scancode, s32 action, s32 mods
                 glfwSetInputMode(trainer->window.handle, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
             } else {
                 SaveGlobalSettings(trainer);
+                trainer->settings->fps_delay = 1.0 / (f64)( trainer->settings->max_fps); 
 
                 glfwSetInputMode(trainer->window.handle, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
                 SpawnTargets(trainer->level);
@@ -466,18 +495,18 @@ void KeyCallback(GLFWwindow *handle, s32 key, s32 scancode, s32 action, s32 mods
 void InitGLFW() {
     if (!glfwInit()) {
         LogFatal("Failed to initialize GLFW!");
-	}
+    }
 
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
     glfwWindowHint(GLFW_SAMPLES, 4);
 }
 
-Window CreateWindow(const char *title, int width, int height) {
-    Window window = {};
+window_t CreateWindow(const char *title, int width, int height) {
+    window_t window = {};
 
-	window.handle = glfwCreateWindow(width, height, title, glfwGetPrimaryMonitor(), 0);
+    window.handle = glfwCreateWindow(width, height, title, glfwGetPrimaryMonitor(), 0);
     if (!window.handle) {
         LogFatal("Failed to create GLFW window!");
     }
@@ -490,10 +519,10 @@ Window CreateWindow(const char *title, int width, int height) {
     LogInfo("  Vendor: %s", glGetString(GL_VENDOR));
     LogInfo("  Renderer: %s", glGetString(GL_RENDERER));
     LogInfo("  Version: %s", glGetString(GL_VERSION));
-	LogInfo("  Shading Language %s", glGetString(GL_SHADING_LANGUAGE_VERSION));
+    LogInfo("  Shading Language %s", glGetString(GL_SHADING_LANGUAGE_VERSION));
 
-	LogInfo("GLFW Info:");
-	LogInfo("  Version %s", glfwGetVersionString());
+    LogInfo("GLFW Info:");
+    LogInfo("  Version %s", glfwGetVersionString());
 
     bool raw_mouse_input = glfwRawMouseMotionSupported();
     if (raw_mouse_input) {
@@ -511,52 +540,56 @@ Window CreateWindow(const char *title, int width, int height) {
     return window;
 }
 
-void UpdateWindow(Window *window) {
+void UpdateWindow(window_t *window) {
     glfwPollEvents();
     glfwSwapBuffers(window->handle);
 }
 
-bool WindowShouldClose(Window *window) {
+bool WindowShouldClose(window_t *window) {
     return !glfwWindowShouldClose(window->handle);
 }
 
-void DestroyWindow(Window *window) {
+void DestroyWindow(window_t *window) {
     glfwDestroyWindow(window->handle);
     glfwTerminate();
 }
 
 glm::mat4 TranslateScale(glm::vec3 trans, glm::vec3 scale) {
-    return glm::translate(glm::mat4(1.0f), trans) * 
-                glm::scale(glm::mat4(1.0f), scale);
+    return  glm::translate(glm::mat4(1.0f), trans) * 
+            glm::scale(glm::mat4(1.0f), scale);
 }
 
 glm::mat4 TranslateRotateScale(glm::vec3 trans, glm::vec3 rot, glm::vec3 scale) {
-    return glm::translate(glm::mat4(1.0f), trans) * 
-                glm::toMat4(glm::quat(glm::radians(rot))) *
-                glm::scale(glm::mat4(1.0f), scale);
+    return  glm::translate(glm::mat4(1.0f), trans)      * 
+            glm::toMat4(glm::quat(glm::radians(rot)))   *
+            glm::scale(glm::mat4(1.0f), scale);
 }
 
-
-PositionalLight GetWhiteLight(glm::vec3 pos) {
-    return PositionalLight{glm::vec4(0.0f, 0.0f, 0.0f, 1.0f), glm::vec4(1.0f), glm::vec4(1.0f), pos};
+positional_light_t GetWhiteLight(glm::vec3 pos) {
+    return positional_light_t{
+        glm::vec4(0.0f, 0.0f, 0.0f, 1.0f),
+        glm::vec4(1.0f),
+        glm::vec4(1.0f),
+        pos
+    };
 }
 
-void DrawCrosshair(AimTrainer *trainer, Shader *ui_shader, SimpleMesh *crosshair_mesh) {
-    Crosshair crosshair = *trainer->crosshair;
-    Window window = trainer->window;
+void DrawCrosshair(aimtrainer_t *trainer, shader_t *ui_shader, simple_mesh_t *crosshair_mesh) {
+    settings_t  *settings = trainer->settings;
+    window_t    window = trainer->window;
 
-    glm::mat4 ui_proj = glm::ortho(0.0f, (f32) window.width, (f32) window.height, 0.0f, -1.0f, 1.0f);
+    glm::mat4 ui_proj    = glm::ortho(0.0f, (f32) window.width, (f32) window.height, 0.0f, -1.0f, 1.0f);
     glm::mat4 center_mat = glm::translate(glm::mat4(1.0f), glm::vec3(window.width / 2, window.height / 2, 0.0f));
+
+    f32 size        = settings->crosshair_size;
+    f32 gap         = settings->crosshair_gap;
+    f32 thickness   = settings->crosshair_thickness;
 
     Use(ui_shader);
     LoadMatrix(ui_shader, "proj_mat", ui_proj);
     LoadMatrix(ui_shader, "view_mat", center_mat);
-    LoadVec3(ui_shader, "in_color", crosshair.color);
+    LoadVec3(ui_shader,   "in_color", settings->crosshair_color);
     Bind(crosshair_mesh);
-
-    f32 size = crosshair.size;
-    f32 thickness = crosshair.thickness;
-    f32 gap = crosshair.gap;
 
     // right
     LoadMatrix(ui_shader, "model_mat", TranslateRotateScale({gap, 0, 0}, {0, 0, 0}, {size, thickness, 1}));
@@ -575,13 +608,28 @@ void DrawCrosshair(AimTrainer *trainer, Shader *ui_shader, SimpleMesh *crosshair
     Draw(crosshair_mesh);
 }
 
-void DrawSettings(AimTrainer *trainer, int fps) {
-    Crosshair *crosshair = trainer->crosshair;
-    Level *level = trainer->level;
+void DrawGlobalSettings(aimtrainer_t *trainer, int fps) {
+    settings_t *settings = trainer->settings;
 
-    ImGui::Begin("Settings");
+    ImGui::Begin("Global Settings");
     ImGui::LabelText("fps_text", "%d FPS", fps);
 
+    ImGui::Checkbox("draw_skybox", &settings->draw_skybox);
+
+    ImGui::SliderFloat("crosshair_size", &settings->crosshair_size, 1, 10);
+    ImGui::SliderFloat("crosshair_thickness", &settings->crosshair_thickness, 0.1, 5);
+    ImGui::SliderFloat("crosshair_gap", &settings->crosshair_gap, 0, 8);
+    ImGui::ColorEdit3("crosshair_color", &settings->crosshair_color.x);
+    ImGui::InputInt("max_fps", &settings->max_fps);
+    ImGui::InputFloat("sensitivity", &settings->sensitivity);
+
+    ImGui::End();
+}
+
+void DrawLevelSettings(aimtrainer_t *trainer) {
+    level_t *level = trainer->level;
+
+    ImGui::Begin("Level Settings");
     int count_before = level->target_count;
     ImGui::SliderInt("target_count", &level->target_count, 1, 20);
     if (count_before != level->target_count) {
@@ -596,28 +644,22 @@ void DrawSettings(AimTrainer *trainer, int fps) {
     ImGui::SliderFloat("target_speed_x", &level->target_speed_x, 0, 10);
     ImGui::SliderFloat("target_speed_y", &level->target_speed_y, 0, 10);
     ImGui::ColorEdit3("wall_color", &level->wall_color.x);
-    ImGui::Checkbox("draw_skybox", &trainer->draw_skybox);
     ImGui::Checkbox("circular", &level->circular);
-
-    ImGui::SliderFloat("crosshair_size", &crosshair->size, 1, 10);
-    ImGui::SliderFloat("crosshair_thickness", &crosshair->thickness, 0.1, 5);
-    ImGui::SliderFloat("crosshair_gap", &crosshair->gap, 0, 8);
-    ImGui::ColorEdit3("crosshair_color", &crosshair->color.x);
 
     ImGui::End();
 }
 
-
-void DrawLevel(AimTrainer *trainer, Shader *shader, Mesh *sphere_mesh, Mesh *cube_mesh, Mesh *body_mesh) {
+void DrawLevel(aimtrainer_t *trainer, shader_t *shader, mesh_t *sphere_mesh, mesh_t *cube_mesh, mesh_t *body_mesh) {
     Bind(cube_mesh);
 
-    int scale = 100;
-    int pos = 100;
-    int mini = 10;
+    int scale   = 100;
+    int pos     = 100;
+    int mini    = 10;
 
-    Level *level = trainer->level;
+    level_t     *level = trainer->level;
+    settings_t  *settings = trainer->settings;
 
-    if (!trainer->draw_skybox) {
+    if (!settings->draw_skybox) {
         // front
         LoadMatrix(shader, "model_mat", TranslateScale({0, 0, -pos}, {scale, scale, mini}));
         LoadVec3(shader, "object_color", level->wall_color);
@@ -649,7 +691,7 @@ void DrawLevel(AimTrainer *trainer, Shader *shader, Mesh *sphere_mesh, Mesh *cub
     f32 sphere_size = level->target_size;
 
     for (int i = 0; i < level->targets.size(); ++i) {
-        Target target = level->targets[i];
+        target_t target = level->targets[i];
                         
         LoadInt(shader, "in_entity", i + 1);
 
@@ -684,10 +726,10 @@ void DrawLevel(AimTrainer *trainer, Shader *shader, Mesh *sphere_mesh, Mesh *cub
 int main() {  
     srand(time(NULL));
 
-	AimTrainer trainer = {};
+    aimtrainer_t trainer = {};
 
     InitGLFW();
-    Window window = CreateWindow("AimTrainer", 1920, 1080);
+    window_t window = CreateWindow("aimtrainer_t", 1920, 1080);
 
     InitWindow(&window, &trainer);
     InitializeImGui(window.handle);
@@ -703,56 +745,59 @@ int main() {
         "assets/textures/nz.png"
     };
 
-    SimpleMesh *skybox_mesh = CreateSimpleMesh(&skybox_vertices[0], 108);
-    CubeMap skybox = CreateCubeMap(skybox_faces);
-    Shader *skybox_shader = CreateShader("assets/shaders/skybox.vert", "assets/shaders/skybox.frag");
+    simple_mesh_t   *skybox_mesh    = CreateSimpleMesh(&skybox_vertices[0], 108);
+    cubemap_t       skybox          = CreateCubeMap(skybox_faces);
+    shader_t        *skybox_shader  = CreateShader("assets/shaders/skybox.vert", "assets/shaders/skybox.frag");
 
-    Shader *shader = CreateShader("assets/shaders/simple.vert", "assets/shaders/simple.frag");
-    Camera *camera = CreateCamera(103, 1.0f, 0.1f, 1000.0f);
+    shader_t *shader = CreateShader("assets/shaders/simple.vert", "assets/shaders/simple.frag");
+    camera_t *camera = CreateCamera(103, 1.0f, 0.1f, 1000.0f);
     
-    Shader *ui_shader = CreateShader("assets/shaders/ui.vert", "assets/shaders/ui.frag");
-    SimpleMesh *crosshair_mesh = CreateSimpleMesh(retangle_vertices, 18);
+    shader_t        *ui_shader      = CreateShader("assets/shaders/ui.vert", "assets/shaders/ui.frag");
+    simple_mesh_t   *crosshair_mesh = CreateSimpleMesh(retangle_vertices, 18);
 
-    Mesh *cube_mesh = LoadObjFile("assets/models/cube.obj");
-    Mesh *sphere_mesh = LoadObjFile("assets/models/sphere.obj");
-    Mesh *body_mesh = LoadObjFile("assets/models/body.obj");
+    mesh_t *cube_mesh   = LoadObjFile("assets/models/cube.obj");
+    mesh_t *sphere_mesh = LoadObjFile("assets/models/sphere.obj");
+    mesh_t *body_mesh   = LoadObjFile("assets/models/body.obj");
 
-    Framebuffer *framebuffer = CreateFramebuffer(window.width, window.height, {GL_RGBA, GL_RED_INTEGER, GL_DEPTH24_STENCIL8});
+    framebuffer_t *framebuffer = CreateFramebuffer(window.width, window.height, {GL_RGBA, GL_RED_INTEGER, GL_DEPTH24_STENCIL8});
     Bind(framebuffer);
-
-    /* find better solution. Problem is crosshair covering center */
-    Framebuffer *crosshair_framebuffer = CreateFramebuffer(window.width, window.height, {GL_RGBA});
    
     InitializeSound();
-    Sounds sounds;
+    sounds_t sounds;
     sounds.hit_sound = LoadSound("assets/sounds/hit.wav");
 
     glm::vec3 light_pos = glm::vec3(0, 0, 0);
 
-    Crosshair crosshair = {2, 1, 4, glm::vec3(0.0, 1.0, 1.0)};
+    settings_t settings;
+    settings.crosshair_size         = 2;
+    settings.crosshair_thickness    = 1;
+    settings.crosshair_gap          = 4;
+    settings.crosshair_color        = glm::vec3(0.0, 1.0, 1.0);
+    settings.crosshair_size         = 2;
+    settings.sensitivity            = 2.068;
+    settings.max_fps                = 240;
+    settings.draw_skybox            = false;
 
-    Level level;
-    level.target_count = 6;
-    level.target_size = 1.5f;
-    level.target_distance = 50;
-    level.wall_color = glm::vec3(0.05, 0.06, 0.12);
-    level.target_color = glm::vec3(1.0, 0.0, 0.0);
-    level.target_speed_x = 0;
-    level.target_speed_y = 0;
-    level.circular = false;
-    level.target_type = CIRCLE;
-    level.target_health = 1;
+    level_t level;
+    level.target_count      = 6;
+    level.target_size       = 1.5f;
+    level.target_distance   = 50;
+    level.wall_color        = glm::vec3(0.05, 0.06, 0.12);
+    level.target_color      = glm::vec3(1.0, 0.0, 0.0);
+    level.target_speed_x    = 0;
+    level.target_speed_y    = 0;
+    level.circular          = false;
+    level.target_type       = CIRCLE;
+    level.target_health     = 1;
 
-    trainer.window = window;
-    trainer.camera = camera;
+    trainer.window      = window;
+    trainer.camera      = camera;
     trainer.framebuffer = framebuffer;
-    trainer.crosshair = &crosshair;
-    trainer.level = &level;
-    trainer.sounds = sounds;
-    trainer.sensitivity = 2.068;
-    trainer.m_yaw = 0.022;
-    trainer.m_pitch = 0.022;
-    trainer.draw_skybox = false;
+    trainer.settings    = &settings;
+    trainer.level       = &level;
+    trainer.sounds      = sounds;
+    trainer.m_yaw       = 0.022;
+    trainer.m_pitch     = 0.022;
 
     LoadGlobalSettings(&trainer);
 
@@ -765,29 +810,35 @@ int main() {
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_MULTISAMPLE);  
 
-    int frames = 0;
-    int fps = 0;
+    int frames  = 0;
+    int fps     = 0;
     f64 last_time_fps = glfwGetTime();
 
     f64 last_time = glfwGetTime();
-    f64 fps_delay = 1.0 / 240.0;
 
     LoadVec3(shader, "light_pos", light_pos);
+    
+    settings.fps_delay = 1.0 / settings.max_fps;
 
     while (WindowShouldClose(&window)) {
         f64 delta = glfwGetTime() - last_time;
-        if (delta < fps_delay) {
+        if (delta < settings.fps_delay) {
             continue;
         }
         last_time = glfwGetTime();
 
+        shoot_cooldown -= delta;
+        if (mouse_pressed && shoot_cooldown <= 0) {
+            shoot = true;
+        }
+
         MoveTargets(&level, delta);
 
         Bind(framebuffer);
-        
+
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        if (trainer.draw_skybox) {
+        if (settings.draw_skybox) {
             Use(skybox_shader);
             LoadMatrix(skybox_shader, "view_matrix", camera->view);
             LoadMatrix(skybox_shader, "proj_matrix", camera->projection);
@@ -810,13 +861,16 @@ int main() {
         ChangeOrientation(camera);
 
         DrawLevel(&trainer, shader, sphere_mesh, cube_mesh, body_mesh);
-         
-        Unbind(framebuffer);
+    
+        // this has to be here before drawing the crosshair or otherwise the crosshair blocks the hit detection
+        if (shoot) {
+            Shoot(&trainer);
+            shoot = false;
+        }         
 
-        // Crosshair        
-        Bind(crosshair_framebuffer);
         DrawCrosshair(&trainer, ui_shader, crosshair_mesh);
-        Unbind(crosshair_framebuffer);
+        
+        Unbind(framebuffer);
 
         // ImGui Draw Framebuffer
         BeginImGuiFrame();
@@ -825,21 +879,12 @@ int main() {
         ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
  
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-        ImGui::Begin("AimTrainer", 0, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoResize);
-        
+        ImGui::Begin("AimTrainer", 0, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoResize);  
 
         ImGui::GetWindowDrawList()->AddImage(
             (void *) GetAttachment(framebuffer, 0), 
             ImVec2(0, 0), 
             ImVec2(framebuffer->width, framebuffer->height), 
-            ImVec2(0, 1), 
-            ImVec2(1, 0)
-        );
-        
-        ImGui::GetWindowDrawList()->AddImage(
-            (void *) GetAttachment(crosshair_framebuffer, 0), 
-            ImVec2(0, 0), 
-            ImVec2(crosshair_framebuffer->width, crosshair_framebuffer->height), 
             ImVec2(0, 1), 
             ImVec2(1, 0)
         );
@@ -856,8 +901,10 @@ int main() {
         }
 
         if (trainer.show_settings) {
-            DrawSettings(&trainer, fps);
+            DrawGlobalSettings(&trainer, fps);
             ImGui::SetWindowFocus("Settings");
+
+            DrawLevelSettings(&trainer);
         }
 
         EndImGuiFrame();
@@ -882,5 +929,5 @@ int main() {
     DestroyFramebuffer(framebuffer);
     DestroySound();
 
-	return 0;
+    return 0;
 }

@@ -13,9 +13,9 @@ bool CheckOpenGLError() {
     return found;
 }
 
-Shader *CreateShader(const char *vert_path, const char *frag_path) {
+shader_t *CreateShader(const char *vert_path, const char *frag_path) {
     // TODO: not use new - replace stl containers with custom ones
-    Shader *shader = new Shader;
+    shader_t *shader = new shader_t;
 
     char *vert_source = ReadEntireFile(vert_path);
     char *frag_source = ReadEntireFile(frag_path);
@@ -46,8 +46,8 @@ Shader *CreateShader(const char *vert_path, const char *frag_path) {
         LogFatal("Linking error");
     }
 
-	glDetachShader(shader->id, vert_shader);
-	glDetachShader(shader->id, frag_shader);
+    glDetachShader(shader->id, vert_shader);
+    glDetachShader(shader->id, frag_shader);
     glDeleteShader(vert_shader);
     glDeleteShader(frag_shader);
 
@@ -57,7 +57,7 @@ Shader *CreateShader(const char *vert_path, const char *frag_path) {
     return shader;
 }
 
-void DestroyShader(Shader *shader) {
+void DestroyShader(shader_t *shader) {
     glDeleteProgram(shader->id);
 
     // TODO: not use delete - replace stl containers with custom ones
@@ -111,11 +111,11 @@ void PrintProgramLog(GLuint program) {
     delete[] log;
 }
 
-void Use(Shader *shader) {
+void Use(shader_t *shader) {
     glUseProgram(shader->id);
 }
 
-GLint GetUniformLocation(Shader *shader, String name) {
+GLint GetUniformLocation(shader_t *shader, string_t name) {
     auto find = shader->uniform_locations.find(name);
     if (find != shader->uniform_locations.end()) {
         return find->second;
@@ -126,22 +126,22 @@ GLint GetUniformLocation(Shader *shader, String name) {
     return location;
 }
 
-void LoadInt(Shader *shader, String name, s32 value) {
+void LoadInt(shader_t *shader, string_t name, s32 value) {
     GLint location = GetUniformLocation(shader, name);
     glUniform1i(location, value);
 }
 
-void LoadVec3(Shader *shader, String name, glm::vec3 vec) {
+void LoadVec3(shader_t *shader, string_t name, glm::vec3 vec) {
     GLint location = GetUniformLocation(shader, name);
     glUniform3f(location, vec.x, vec.y, vec.z);
 }
 
-void LoadVec4(Shader *shader, String name, glm::vec4 vec) {
+void LoadVec4(shader_t *shader, string_t name, glm::vec4 vec) {
     GLint location = GetUniformLocation(shader, name);
     glUniform4f(location, vec.x, vec.y, vec.z, vec.w);
 }
 
-void LoadMatrix(Shader *shader, String name, glm::mat4 matrix) {
+void LoadMatrix(shader_t *shader, string_t name, glm::mat4 matrix) {
     GLint location = GetUniformLocation(shader, name);
     glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(matrix));
 }

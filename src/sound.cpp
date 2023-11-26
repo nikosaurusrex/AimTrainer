@@ -4,9 +4,9 @@
 #include "sound.h"
 
 struct Sound {
-    ma_engine engine;
-    ma_fence fence;
-    Array<ma_sound> sounds;
+    ma_engine           engine;
+    ma_fence            fence;
+    array_t<ma_sound>   sounds;
 };
 
 /* Fucking miniaudio.h imports some shit like windows.h that has some very weird macros that destroys code
@@ -40,7 +40,9 @@ void PlaySoundById(u32 sound_id) {
 
 u32 LoadSound(const char *path) {
     u32 id = sound->sounds.size();
+    
     sound->sounds.push_back(ma_sound());
+
     ma_sound *sound_data = &sound->sounds[id];
     ma_result result = ma_sound_init_from_file(&sound->engine, path, MA_SOUND_FLAG_NO_SPATIALIZATION, 0, 0, sound_data);
 

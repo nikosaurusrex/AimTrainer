@@ -3,28 +3,26 @@
 
 #include "common.h"
 
-struct Framebuffer {
-    s32 width;
-    s32 height;
-    GLuint id = 0;
-    Array<GLint> color_attachments_types;
-    Array<GLuint> color_attachments;
-    GLint depth_attachment_type = 0;
-    GLuint depth_attachment;
+struct framebuffer_t {
+    s32             width;
+    s32             height;
+    GLuint          id = 0;
+    array_t<GLint>  color_attachments_types;
+    array_t<GLuint> color_attachments;
+    GLint           depth_attachment_type = 0;
+    GLuint          depth_attachment;
 };
 
-Framebuffer *CreateFramebuffer(s32 width, s32 height, Array<GLint> attachments);
-void DestroyFramebuffer(Framebuffer *fb);
+framebuffer_t   *CreateFramebuffer(s32 width, s32 height, array_t<GLint> attachments);
+void            DestroyFramebuffer(framebuffer_t *fb);
 
-void Reload(Framebuffer *fb);
+void Reload(framebuffer_t *fb);
+void Bind(framebuffer_t *fb);
+void Unbind(framebuffer_t *fb);
+void Resize(framebuffer_t *fb, s32 width, s32 height);
 
-void Bind(Framebuffer *fb);
-void Unbind(Framebuffer *fb);
-
-void Resize(Framebuffer *fb, s32 width, s32 height);
-
-GLuint GetAttachment(Framebuffer *fb, u32 index);
-s32 Read(Framebuffer *fb, u32 index, s32 x, s32 y);
-void Clear(Framebuffer *fb, u32 index, s32 value);
+GLuint  GetAttachment(framebuffer_t *fb, u32 index);
+s32     Read(framebuffer_t *fb, u32 index, s32 x, s32 y);
+void    Clear(framebuffer_t *fb, u32 index, s32 value);
 
 #endif

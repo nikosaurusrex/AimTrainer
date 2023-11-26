@@ -9,50 +9,50 @@
 #include "assimp/scene.h"
 #include "assimp/postprocess.h"
 
-CubeMap CreateCubeMap(const char *faces[6]) {
+cubemap_t CreateCubeMap(const char *faces[6]) {
     u32 id;
+    s32 width, height, nrChannels;
+    u8  *data;  
 
     glGenTextures(1, &id);
-	glBindTexture(GL_TEXTURE_CUBE_MAP, id);
-
-	s32 width, height, nrChannels;
-	u8 *data;  
+    glBindTexture(GL_TEXTURE_CUBE_MAP, id);
 
     stbi_set_flip_vertically_on_load(false);
-	for(u32 i = 0; i < 6; i++) {
-		data = stbi_load(faces[i], &width, &height, &nrChannels, STBI_rgb_alpha);
-		glTexImage2D(
-			GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 
-			0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data
-		);
-    	
-    	stbi_image_free(data);
-	}
 
-	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE); 
+    for(u32 i = 0; i < 6; i++) {
+        data = stbi_load(faces[i], &width, &height, &nrChannels, STBI_rgb_alpha);
+        glTexImage2D(
+            GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 
+            0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data
+        );
+        
+        stbi_image_free(data);
+    }
+
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE); 
 
     return id;
 }
 
-void DestroyCubeMap(CubeMap cube_map) {
+void DestroyCubeMap(cubemap_t cube_map) {
     glDeleteTextures(1, &cube_map);
 }
 
-void Bind(CubeMap cube_map) {
-	glBindTexture(GL_TEXTURE_CUBE_MAP, cube_map);
+void Bind(cubemap_t cube_map) {
+    glBindTexture(GL_TEXTURE_CUBE_MAP, cube_map);
 }
 
-SimpleMesh *CreateSimpleMesh(f32 *vertices, s32 num_vertices) {
-    SimpleMesh *mesh = (SimpleMesh *) malloc(sizeof(SimpleMesh));
+simple_mesh_t *CreateSimpleMesh(f32 *vertices, s32 num_vertices) {
+    simple_mesh_t *mesh = (simple_mesh_t *) malloc(sizeof(simple_mesh_t));
+
+    mesh->vertices_count = num_vertices / 3;
 
     glGenVertexArrays(1, &mesh->vao);
     glBindVertexArray(mesh->vao);
-
-    mesh->vertices_count = num_vertices / 3;
 
     glGenBuffers(1, &mesh->vbo);
     glBindBuffer(GL_ARRAY_BUFFER, mesh->vbo);
@@ -63,25 +63,25 @@ SimpleMesh *CreateSimpleMesh(f32 *vertices, s32 num_vertices) {
     return mesh;
 }
 
-void DestroySimpleMesh(SimpleMesh *mesh) {
+void DestroySimpleMesh(simple_mesh_t *mesh) {
     free(mesh);
 }
 
-void Bind(SimpleMesh *mesh) {
+void Bind(simple_mesh_t *mesh) {
     glBindVertexArray(mesh->vao);
 }
 
-void Draw(SimpleMesh *mesh) {
+void Draw(simple_mesh_t *mesh) {
     glDrawArrays(GL_TRIANGLES, 0, mesh->vertices_count);
 }
 
-Mesh *CreateMesh(
-    f32 *vertices, u32 vertices_count,
-    f32 *tex_coords, u32 tex_coords_count,
-    f32 *normals, u32 normals_count,
-    u32 *indices, u32 indices_count
+mesh_t *CreateMesh(
+    f32 *vertices,      u32 vertices_count,
+    f32 *tex_coords,    u32 tex_coords_count,
+    f32 *normals,       u32 normals_count,
+    u32 *indices,       u32 indices_count
 ) {
-    Mesh *mesh = (Mesh *) malloc(sizeof(Mesh));
+    mesh_t *mesh = (mesh_t *) malloc(sizeof(mesh_t));
     mesh->indices_count = indices_count;
 
     glGenVertexArrays(1, &mesh->vao);
@@ -110,23 +110,23 @@ Mesh *CreateMesh(
     return mesh;
 }
 
-void DestroyMesh(Mesh *mesh) {
+void DestroyMesh(mesh_t *mesh) {
     glDeleteVertexArrays(1, &mesh->vao);
     glDeleteBuffers(4, mesh->vbos);
 
     free(mesh);
 }
 
-void Bind(Mesh *mesh) {
+void Bind(mesh_t *mesh) {
     glBindVertexArray(mesh->vao);
 }
 
-void Draw(Mesh *mesh) {
+void Draw(mesh_t *mesh) {
     glDrawElements(GL_TRIANGLES, mesh->indices_count, GL_UNSIGNED_INT, 0);
 }
 
-Texture LoadTexture(String file_path, GLint format) {
-    Texture texture;
+texture_t LoadTexture(string_t file_path, GLint format) {
+    texture_t texture;
 
     s32 w, h;
 
@@ -156,16 +156,16 @@ Texture LoadTexture(String file_path, GLint format) {
     return texture;
 }
 
-void DestroyTexture(Texture texture) {
+void DestroyTexture(texture_t texture) {
     glDeleteTextures(1, &texture);
 }
 
-void BindTexture(Texture texture, s32 slot) {
+void BindTexture(texture_t texture, s32 slot) {
     glActiveTexture(GL_TEXTURE0 + slot);
     glBindTexture(GL_TEXTURE_2D, texture);
 }
 
-void Install(PositionalLight light, Shader *shader) {
+void Install(positional_light_t light, shader_t *shader) {
     Use(shader);
     LoadVec4(shader, "light.ambient", light.ambient);
     LoadVec4(shader, "light.diffuse", light.diffuse);
@@ -173,7 +173,7 @@ void Install(PositionalLight light, Shader *shader) {
     LoadVec3(shader, "light.pos", light.pos);
 }
 
-Mesh *LoadObjFile(const char *file) {
+mesh_t *LoadObjFile(const char *file) {
     Assimp::Importer importer;
 
     const aiScene *scene = importer.ReadFile(file, aiProcess_Triangulate | aiProcess_FlipUVs);

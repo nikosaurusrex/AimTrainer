@@ -24,32 +24,32 @@
 #include <utility>
 #include <vector>
 
-typedef int8_t s8;
+typedef int8_t  s8;
 typedef int16_t s16;
 typedef int32_t s32;
 typedef int64_t s64;
 
-typedef uint8_t u8;
+typedef uint8_t  u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
 
-typedef float f32;
+typedef float  f32;
 typedef double f64;
 
-using String = std::string;
+using string_t = std::string;
 
 template <typename T>
-using Array = std::vector<T>;
+using array_t = std::vector<T>;
 
 template <typename K, typename V>
-using HashMap = std::unordered_map<K, V>;
+using hashmap_t = std::unordered_map<K, V>;
 
 template <typename A, typename B>
-using Pair = std::pair<A, B>;
+using pair_t = std::pair<A, B>;
 
 template <typename T>
-using Set = std::set<T>;
+using set_t = std::set<T>;
 
 void LogFatal(const char *format, ...);
 void LogError(const char *format, ...);

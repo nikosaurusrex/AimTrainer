@@ -6,7 +6,7 @@
 void InitializeSound();
 void DestroySound();
 
-void PlaySoundById(u32 sound_id);
-u32 LoadSound(const char *path);
+void    PlaySoundById(u32 sound_id);
+u32     LoadSound(const char *path);
 
 #endif
