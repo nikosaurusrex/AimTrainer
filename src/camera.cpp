@@ -32,7 +32,7 @@ void CalculateCamera(camera_t *camera, s32 width, s32 height) {
 
 void ChangeOrientation(camera_t *camera) {
     glm::quat orientation = glm::quat(glm::vec3(glm::radians(-camera->pitch), glm::radians(-camera->yaw), 0.0f));
-
+    
     camera->view = glm::translate(glm::mat4(1.0f), camera->position) * glm::toMat4(orientation);;
     camera->view = glm::inverse(camera->view); 
 }
